@@ -12,6 +12,8 @@ interface ServerUser {
   color: string;
   avatarSymbol: string;
   joinedAt: number;
+  type?: 'user' | 'group' | 'channel';
+  creatorId?: string;
 }
 
 interface ServerMessage {
@@ -141,8 +143,11 @@ function getOnlineUserIds(): string[] {
 function broadcastEvent(type: string, data: any) {
   clients.forEach((client) => {
     if (type === "message" && data && data.recipientId) {
-      if (client.userId !== data.userId && client.userId !== data.recipientId) {
-        return;
+      const isGroupOrChannel = registeredUsers.some(u => u.id === data.recipientId && (u.type === 'group' || u.type === 'channel'));
+      if (!isGroupOrChannel) {
+        if (client.userId !== data.userId && client.userId !== data.recipientId) {
+          return;
+        }
       }
     }
 
@@ -209,9 +214,12 @@ async function startServer() {
     if (!activeUserId) {
       return res.json(messages.filter((m) => !m.recipientId));
     }
-    const filtered = messages.filter(
-      (m) => !m.recipientId || m.userId === activeUserId || m.recipientId === activeUserId
-    );
+    const filtered = messages.filter((m) => {
+      if (!m.recipientId) return true;
+      const isGroupOrChannel = registeredUsers.some(u => u.id === m.recipientId && (u.type === 'group' || u.type === 'channel'));
+      if (isGroupOrChannel) return true;
+      return m.userId === activeUserId || m.recipientId === activeUserId;
+    });
     res.json(filtered);
   });
 
@@ -676,9 +684,37 @@ async function startServer() {
       name: u.name,
       color: u.color,
       avatarSymbol: u.avatarSymbol,
-      joinedAt: u.joinedAt
+      joinedAt: u.joinedAt,
+      type: u.type,
+      creatorId: u.creatorId
     }));
     return res.json(safeList);
+  });
+
+  app.post("/api/groups", (req, res) => {
+    const { name, avatarSymbol, type, creatorId } = req.body;
+    if (!name || !type || !creatorId) {
+      return res.status(400).json({ error: "Name, type, and creatorId are required" });
+    }
+    
+    const newGroup: ServerUser = {
+      id: type + "_" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
+      name: name.trim(),
+      color: "#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
+      avatarSymbol: avatarSymbol || (type === "group" ? "👥" : "📢"),
+      joinedAt: Date.now(),
+      type: type,
+      creatorId: creatorId
+    };
+
+    registeredUsers.push(newGroup);
+    try {
+      fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
+    } catch (e) {
+      console.error("Save users error", e);
+    }
+
+    return res.status(201).json(newGroup);
   });
 
   app.get("/api/health", (req, res) => {

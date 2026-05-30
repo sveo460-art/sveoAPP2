@@ -34,6 +34,10 @@ export default function App() {
   const [showChatListMobile, setShowChatListMobile] = useState<boolean>(true); // For portrait mobile double viewport
   const [isNewPmModalOpen, setIsNewPmModalOpen] = useState<boolean>(false);
   const [newPmSearchName, setNewPmSearchName] = useState<string>('');
+  const [isCreateEntityOpen, setIsCreateEntityOpen] = useState<'group' | 'channel' | null>(null);
+  const [createEntityName, setCreateEntityName] = useState('');
+  const [createEntityAvatar, setCreateEntityAvatar] = useState('');
+  const [isSearchEntitiesOpen, setIsSearchEntitiesOpen] = useState<boolean>(false);
 
   const [isThemeSelectorOpen, setIsThemeSelectorOpen] = useState<boolean>(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
@@ -185,6 +189,13 @@ export default function App() {
       return t.userId === targetUserId && t.recipientId === currentUser?.id;
     }
   }), [typingUsers, activeChatId, currentUser?.id]);
+
+  const isChannelGuest = React.useMemo(() => {
+    if (!activeChatId.startsWith('private_') || !currentUser) return false;
+    const targetUserId = activeChatId.replace('private_', '');
+    const userOrEntity = allUsers.find(u => u.id === targetUserId);
+    return userOrEntity?.type === 'channel' && userOrEntity.creatorId !== currentUser.id;
+  }, [activeChatId, currentUser, allUsers]);
 
   const formatLastMessageTime = (timestamp: number): string => {
     const diffMs = Date.now() - timestamp;
@@ -1117,6 +1128,39 @@ export default function App() {
     setIsEditProfileOpen(false);
   };
 
+  const handleCreateEntity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createEntityName.trim() || !isCreateEntityOpen) return;
+
+    try {
+      const res = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: createEntityName,
+          type: isCreateEntityOpen,
+          avatarSymbol: createEntityAvatar || (isCreateEntityOpen === 'group' ? '👥' : '📢'),
+          creatorId: currentUser?.id
+        })
+      });
+      if (res.ok) {
+        const newEntity = await res.json();
+        setActiveChatId(`private_${newEntity.id}`);
+        setIsCreateEntityOpen(null);
+        setCreateEntityName('');
+        setCreateEntityAvatar('');
+        if (!isLandscape) setShowChatListMobile(false);
+        loadUsersList();
+        showToast(`${isCreateEntityOpen === 'group' ? 'Группа' : 'Канал'} успешно создан!`);
+      } else {
+        showToast('Ошибка при создании');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Ошибка при создании');
+    }
+  };
+
   const handleScroll = () => {
     const el = chatContainerRef.current;
     if (!el) return;
@@ -1292,16 +1336,28 @@ export default function App() {
                 </span>
               </div>
 
-              <button
-                onClick={() => {
-                  setNewPmSearchName('');
-                  setIsNewPmModalOpen(true);
-                }}
-                className="w-full bg-sky-500 hover:bg-sky-600 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-sky-400/20 cursor-pointer"
-              >
-                <Plus className="w-4 h-4 shrink-0" />
-                Написать лично (ЛС)
-              </button>
+              <div className="flex gap-2 w-full">
+                <button
+                  onClick={() => {
+                    setNewPmSearchName('');
+                    setIsNewPmModalOpen(true);
+                  }}
+                  className="flex-1 bg-sky-500 hover:bg-sky-600 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-sky-400/20 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  Написать лично
+                </button>
+                <button
+                  onClick={() => {
+                    setNewPmSearchName('');
+                    setIsSearchEntitiesOpen(true);
+                  }}
+                  className="p-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl flex items-center justify-center transition cursor-pointer"
+                  title="Поиск групп, каналов"
+                >
+                  <Search className="w-4 h-4 text-white" />
+                </button>
+              </div>
             </div>
 
             {/* Chats list scrollable container */}
@@ -1394,6 +1450,15 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {/* Floating Action Button */}
+            <button
+              onClick={() => setIsCreateEntityOpen('group')}
+              className={`absolute bottom-[72px] right-4 z-30 bg-sky-500 hover:bg-sky-600 active:scale-95 shadow-lg shadow-sky-500/30 text-white rounded-full flex items-center justify-center cursor-pointer transition ${isLandscape ? 'p-3' : 'p-3 sm:p-4'}`}
+              title="Создать группу или канал"
+            >
+              <Plus className="w-6 h-6 shrink-0" />
+            </button>
 
             {/* Current user profile info in sidebar footer */}
             <div className="p-3 bg-[#111a22] border-t border-[#24303f] flex items-center justify-between shrink-0 text-xs text-gray-400">
@@ -1811,170 +1876,179 @@ export default function App() {
             <div className={`border-t border-gray-200/50 dark:border-neutral-800/50 bg-white/75 dark:bg-[#1a1a1a]/75 backdrop-blur-md relative z-10 shrink-0 transition-all duration-350 ${
               isLandscape ? 'p-2 px-3' : 'p-2 sm:p-4'
             }`}>
-              {replyTarget && (
-                <div className="flex items-center justify-between bg-gray-50 dark:bg-neutral-800 p-2.5 rounded-xl border-l-4 border-sky-500 mb-3 animate-fade-in">
-                  <div className="flex items-center gap-2 text-xs min-w-0 font-medium">
-                    <CornerUpLeft className="w-4 h-4 text-sky-500 shrink-0" />
-                    <div className="min-w-0">
-                      <span className="font-semibold text-gray-750 dark:text-gray-200">
-                        Ответ на письмо {replyTarget.userName}
-                      </span>
-                      <p className="text-gray-500 dark:text-neutral-400 truncate text-[11px]">
-                        {replyTarget.text}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setReplyTarget(null)}
-                    className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-neutral-700 transition"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {selectedPhoto && (
-                <div className={`flex items-center bg-gray-50 dark:bg-neutral-800 rounded-xl mb-2.5 animate-fade-in w-fit relative group transition-all duration-350 ${
-                  isLandscape ? 'p-1.5 gap-2' : 'p-2.5 gap-3'
-                }`}>
-                  <div className={`relative rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 shadow-sm shrink-0 transition-all duration-350 ${
-                    isLandscape ? 'w-10 h-10' : 'w-16 h-16'
-                  }`}>
-                    <img src={selectedPhoto} alt="Выбранное фото" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="flex flex-col text-left pr-6">
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">Фото готово к отправке</span>
-                    <span className="text-[10px] text-gray-500">Нажмите «Отправить»</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPhoto(null)}
-                    className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg transition transform active:scale-90"
-                    title="Удалить фото"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-
-              {isRecording ? (
-                <div className="flex gap-2 items-center justify-between p-1 px-4 rounded-xl bg-rose-50/90 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 shadow-sm animate-fade-in w-full h-[52px]">
-                  <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-medium text-xs">
-                    <span className="relative flex h-2.5 w-2.5 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-                    </span>
-                    <span>Запись {formatAudioTime(recordingDuration)}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelRecording}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 dark:bg-neutral-800 dark:hover:bg-red-950/40 dark:text-neutral-300 dark:hover:text-red-400 text-xs font-semibold transition cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Отмена</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={stopAndSendRecording}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold shadow transition transform active:scale-95 cursor-pointer"
-                    >
-                      <Send className="w-3.5 h-3.5 shrink-0" />
-                      <span>Отправить</span>
-                    </button>
-                  </div>
+              
+              {isChannelGuest ? (
+                <div className="flex justify-center p-3 text-sm text-gray-500 font-semibold bg-gray-100/50 dark:bg-neutral-800/50 rounded-xl">
+                  Только администраторы могут писать сообщения
                 </div>
               ) : (
-                <form onSubmit={handleSendMessage} className="flex gap-2 items-center w-full">
-                  <div className="relative flex shrink-0">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoSelect}
-                      className="hidden"
-                      id="chat-photo-file-input"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => document.getElementById('chat-photo-file-input')?.click()}
-                      className={`text-gray-500 hover:text-sky-500 dark:text-gray-400 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-neutral-800 rounded-xl transition cursor-pointer ${
-                        isLandscape ? 'p-2' : 'p-2 sm:p-3'
-                      }`}
-                      title="Прикрепить фото"
-                    >
-                      <Paperclip className="w-5 h-5 animate-pulse-short" />
-                    </button>
-                  </div>
-
-                  <div className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowQuickReactions(!showQuickReactions)}
-                      className={`text-sky-500 hover:bg-sky-50 dark:hover:bg-neutral-800 rounded-xl transition cursor-pointer ${
-                        isLandscape ? 'p-2' : 'p-2 sm:p-3'
-                      }`}
-                      title="Эмодзи"
-                    >
-                      <Smile className="w-5 h-5" />
-                    </button>
-
-                    {showQuickReactions && (
-                      <div className="absolute bottom-full left-0 mb-3 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl p-3 grid grid-cols-4 gap-2 z-40 w-44 animate-fade-in">
-                        {POPULAR_REACTIONS.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => {
-                              setInputText((prev) => prev + emoji);
-                              setShowQuickReactions(false);
-                            }}
-                            className="text-xl p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded transition cursor-pointer"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
+                <>
+                  {replyTarget && (
+                    <div className="flex items-center justify-between bg-gray-50 dark:bg-neutral-800 p-2.5 rounded-xl border-l-4 border-sky-500 mb-3 animate-fade-in">
+                      <div className="flex items-center gap-2 text-xs min-w-0 font-medium">
+                        <CornerUpLeft className="w-4 h-4 text-sky-500 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="font-semibold text-gray-750 dark:text-gray-200">
+                            Ответ на письмо {replyTarget.userName}
+                          </span>
+                          <p className="text-gray-500 dark:text-neutral-400 truncate text-[11px]">
+                            {replyTarget.text}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  <input
-                    type="text"
-                    value={inputText}
-                    onChange={handleInputChange}
-                    placeholder="Напишите сообщение..."
-                    className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all text-gray-800 dark:text-gray-100 ${
-                      isLandscape ? 'py-1.5 px-3 text-xs' : 'py-2 px-3 sm:py-3 sm:px-4 text-xs'
-                    }`}
-                  />
-
-                  {!inputText.trim() && !selectedPhoto ? (
-                    <button
-                      type="button"
-                      onClick={startRecording}
-                      id="btn-record-audio"
-                      className={`shrink-0 bg-sky-500 hover:bg-sky-600 text-white rounded-xl shadow-md cursor-pointer transition transform active:scale-95 animate-fade-in ${
-                        isLandscape ? 'p-2' : 'p-2 sm:p-3'
-                      }`}
-                      title="Записать голосовое сообщение"
-                    >
-                      <Mic className="w-5 h-5" />
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      disabled={!inputText.trim() && !selectedPhoto}
-                      id="btn-send-message"
-                      className={`shrink-0 bg-sky-500 hover:bg-sky-600 disabled:bg-gray-350 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl shadow-md cursor-pointer transition transform active:scale-95 animate-fade-in ${
-                        isLandscape ? 'p-2' : 'p-2 sm:p-3'
-                      }`}
-                    >
-                      <Send className="w-5 h-5 animate-pulse-short" />
-                    </button>
+                      <button
+                        onClick={() => setReplyTarget(null)}
+                        className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-neutral-700 transition"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
-                </form>
+
+                  {selectedPhoto && (
+                    <div className={`flex items-center bg-gray-50 dark:bg-neutral-800 rounded-xl mb-2.5 animate-fade-in w-fit relative group transition-all duration-350 ${
+                      isLandscape ? 'p-1.5 gap-2' : 'p-2.5 gap-3'
+                    }`}>
+                      <div className={`relative rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 shadow-sm shrink-0 transition-all duration-350 ${
+                        isLandscape ? 'w-10 h-10' : 'w-16 h-16'
+                      }`}>
+                        <img src={selectedPhoto} alt="Выбранное фото" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex flex-col text-left pr-6">
+                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">Фото готово к отправке</span>
+                        <span className="text-[10px] text-gray-500">Нажмите «Отправить»</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPhoto(null)}
+                        className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg transition transform active:scale-90"
+                        title="Удалить фото"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {isRecording ? (
+                    <div className="flex gap-2 items-center justify-between p-1 px-4 rounded-xl bg-rose-50/90 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 shadow-sm animate-fade-in w-full h-[52px]">
+                      <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-medium text-xs">
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                        </span>
+                        <span>Запись {formatAudioTime(recordingDuration)}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelRecording}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 dark:bg-neutral-800 dark:hover:bg-red-950/40 dark:text-neutral-300 dark:hover:text-red-400 text-xs font-semibold transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Отмена</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={stopAndSendRecording}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold shadow transition transform active:scale-95 cursor-pointer"
+                        >
+                          <Send className="w-3.5 h-3.5 shrink-0" />
+                          <span>Отправить</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSendMessage} className="flex gap-2 items-center w-full">
+                      <div className="relative flex shrink-0">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoSelect}
+                          className="hidden"
+                          id="chat-photo-file-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => document.getElementById('chat-photo-file-input')?.click()}
+                          className={`text-gray-500 hover:text-sky-500 dark:text-gray-400 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-neutral-800 rounded-xl transition cursor-pointer ${
+                            isLandscape ? 'p-2' : 'p-2 sm:p-3'
+                          }`}
+                          title="Прикрепить фото"
+                        >
+                          <Paperclip className="w-5 h-5 animate-pulse-short" />
+                        </button>
+                      </div>
+
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickReactions(!showQuickReactions)}
+                          className={`text-sky-500 hover:bg-sky-50 dark:hover:bg-neutral-800 rounded-xl transition cursor-pointer ${
+                            isLandscape ? 'p-2' : 'p-2 sm:p-3'
+                          }`}
+                          title="Эмодзи"
+                        >
+                          <Smile className="w-5 h-5" />
+                        </button>
+
+                        {showQuickReactions && (
+                          <div className="absolute bottom-full left-0 mb-3 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl p-3 grid grid-cols-4 gap-2 z-40 w-44 animate-fade-in">
+                            {POPULAR_REACTIONS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => {
+                                  setInputText((prev) => prev + emoji);
+                                  setShowQuickReactions(false);
+                                }}
+                                className="text-xl p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded transition cursor-pointer"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <input
+                        type="text"
+                        value={inputText}
+                        onChange={handleInputChange}
+                        placeholder="Напишите сообщение..."
+                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all text-gray-800 dark:text-gray-100 ${
+                          isLandscape ? 'py-1.5 px-3 text-xs' : 'py-2 px-3 sm:py-3 sm:px-4 text-xs'
+                        }`}
+                      />
+
+                      {!inputText.trim() && !selectedPhoto ? (
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          id="btn-record-audio"
+                          className={`shrink-0 bg-sky-500 hover:bg-sky-600 text-white rounded-xl shadow-md cursor-pointer transition transform active:scale-95 animate-fade-in ${
+                            isLandscape ? 'p-2' : 'p-2 sm:p-3'
+                          }`}
+                          title="Записать голосовое сообщение"
+                        >
+                          <Mic className="w-5 h-5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={!inputText.trim() && !selectedPhoto}
+                          id="btn-send-message"
+                          className={`shrink-0 bg-sky-500 hover:bg-sky-600 disabled:bg-gray-350 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl shadow-md cursor-pointer transition transform active:scale-95 animate-fade-in ${
+                            isLandscape ? 'p-2' : 'p-2 sm:p-3'
+                          }`}
+                        >
+                          <Send className="w-5 h-5 animate-pulse-short" />
+                        </button>
+                      )}
+                    </form>
+                  )}
+                </>
               )}
             </div>
 
@@ -2093,7 +2167,7 @@ export default function App() {
 
               <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" id="contacts-scroller-layout">
                 {allUsers
-                  .filter(u => u.id !== currentUser?.id)
+                  .filter(u => u.id !== currentUser?.id && u.type !== 'group' && u.type !== 'channel')
                   .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
                   .length === 0 ? (
                     <div className="text-center py-6">
@@ -2102,7 +2176,7 @@ export default function App() {
                     </div>
                   ) : (
                     allUsers
-                      .filter(u => u.id !== currentUser?.id)
+                      .filter(u => u.id !== currentUser?.id && u.type !== 'group' && u.type !== 'channel')
                       .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
                       .map((u) => (
                         <button
@@ -2147,6 +2221,160 @@ export default function App() {
               Зарегистрированные аккаунты появляются здесь в реальном времени!
             </div>
           </div>
+        </div>
+      )}
+
+      {isSearchEntitiesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" id="search-entities-backdrop">
+          <div className="w-full max-w-sm bg-[#17212b] rounded-2xl shadow-2xl border border-[#24303f] overflow-hidden text-white" id="search-entities-layout">
+            <div className="p-4 border-b border-[#24303f] flex items-center justify-between bg-[#1f2b38]">
+              <h3 className="text-sm font-bold text-sky-400 flex items-center gap-2">
+                <Search className="w-4 h-4 shrink-0" />
+                Поиск групп и каналов
+              </h3>
+              <button 
+                onClick={() => setIsSearchEntitiesOpen(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5 animate-pulse-short" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <input
+                type="text"
+                placeholder="Поиск по названию..."
+                value={newPmSearchName}
+                onChange={(e) => setNewPmSearchName(e.target.value)}
+                className="w-full bg-[#24303f] border border-[#2b394a] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-sky-500"
+              />
+
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" id="entities-scroller-layout">
+                {allUsers
+                  .filter(u => u.type === 'group' || u.type === 'channel')
+                  .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
+                  .length === 0 ? (
+                    <div className="text-center py-6">
+                      <p className="text-xs text-gray-400 font-medium mb-1">Ничего не найдено</p>
+                    </div>
+                  ) : (
+                    allUsers
+                      .filter(u => u.type === 'group' || u.type === 'channel')
+                      .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
+                      .map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            setActiveChatId(`private_${u.id}`);
+                            setIsSearchEntitiesOpen(false);
+                            setShowChatListMobile(false);
+                          }}
+                          className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
+                        >
+                          <div 
+                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
+                            style={{ backgroundColor: u.color }}
+                          >
+                            {u.avatarSymbol}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold truncate text-white">{u.name}</p>
+                              <span className="bg-sky-500/15 text-sky-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
+                                {u.type === 'group' ? 'Группа' : 'Канал'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-sky-400 font-semibold flex items-center gap-1 mt-0.5">
+                              Перейти
+                            </span>
+                          </div>
+                        </button>
+                      ))
+                  )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCreateEntityOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <form 
+            onSubmit={handleCreateEntity}
+            className="w-full max-w-sm bg-[#17212b] text-white rounded-2xl shadow-2xl overflow-hidden border border-[#24303f]"
+          >
+            <div className="p-4 border-b border-[#24303f] flex items-center justify-between bg-[#1f2b38]">
+              <h3 className="text-sm font-bold text-sky-400 flex items-center gap-1.5">
+                <Plus className="w-4 h-4" />
+                Создать {isCreateEntityOpen === 'group' ? 'группу' : 'канал'}
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setIsCreateEntityOpen(null)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex bg-[#24303f] rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateEntityOpen('group')}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${isCreateEntityOpen === 'group' ? 'bg-[#17212b] text-sky-400 shadow' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Группа
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateEntityOpen('channel')}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${isCreateEntityOpen === 'channel' ? 'bg-[#17212b] text-sky-400 shadow' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Канал
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-gray-400">Название</label>
+                <input
+                  type="text"
+                  required
+                  value={createEntityName}
+                  onChange={(e) => setCreateEntityName(e.target.value)}
+                  maxLength={30}
+                  className="w-full border border-[#2b394a] bg-[#24303f] text-white px-3 py-2 text-xs rounded-lg focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-gray-400">Символ Аватара (эмодзи)</label>
+                <input
+                  type="text"
+                  value={createEntityAvatar}
+                  onChange={(e) => setCreateEntityAvatar(e.target.value.trim().slice(0, 4))}
+                  className="w-full border border-[#2b394a] bg-[#24303f] text-white px-3 py-2 text-xs rounded-lg focus:outline-none focus:border-sky-500"
+                  placeholder={isCreateEntityOpen === 'group' ? '👥' : '📢'}
+                />
+              </div>
+            </div>
+
+            <div className="bg-[#121b25] px-5 py-3 flex justify-end gap-2 border-t border-[#24303f]">
+              <button
+                type="button"
+                onClick={() => setIsCreateEntityOpen(null)}
+                className="px-4 py-2 bg-[#24303f] hover:bg-[#2b394a] text-gray-300 text-xs font-semibold rounded-lg transition"
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold rounded-lg transition"
+              >
+                Создать
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

@@ -23,6 +23,8 @@ export interface User {
   color: string;
   avatarSymbol: string;
   joinedAt: number;
+  type?: 'user' | 'group' | 'channel';
+  creatorId?: string;
 }
 
 export interface Message {
