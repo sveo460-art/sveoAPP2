@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
@@ -41,7 +42,7 @@ interface TypingUser {
   recipientId?: string;
 }
 
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const MESSAGES_FILE = path.join(process.cwd(), "messages.json");
 const USERS_FILE = path.join(process.cwd(), "users.json");
 
@@ -180,6 +181,7 @@ setInterval(() => {
 
 async function startServer() {
   const app = express();
+  app.use(cors());
   app.use(express.json({ limit: "10mb" }));
 
   app.get("/api/stream", (req, res) => {
