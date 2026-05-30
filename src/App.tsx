@@ -2189,7 +2189,7 @@ export default function App() {
 
               <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" id="contacts-scroller-layout">
                 {allUsers
-                  .filter(u => u.id !== currentUser?.id && u.type !== 'group' && u.type !== 'channel')
+                  .filter(u => u.type !== 'group' && u.type !== 'channel')
                   .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
                   .length === 0 ? (
                     <div className="text-center py-6">
@@ -2198,7 +2198,7 @@ export default function App() {
                     </div>
                   ) : (
                     allUsers
-                      .filter(u => u.id !== currentUser?.id && u.type !== 'group' && u.type !== 'channel')
+                      .filter(u => u.type !== 'group' && u.type !== 'channel')
                       .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
                       .map((u) => (
                         <button
@@ -2221,8 +2221,10 @@ export default function App() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold truncate text-white">{u.name}</p>
-                              {onlineUserIds.includes(u.id) && (
+                              <p className="text-xs font-bold truncate text-white">
+                                {u.name} {u.id === currentUser?.id && <span className="text-gray-400 font-normal">(Избранное)</span>}
+                              </p>
+                              {onlineUserIds.includes(u.id) && u.id !== currentUser?.id && (
                                 <span className="bg-emerald-500/15 text-emerald-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
                                   в сети
                                 </span>
