@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Telegram Web Chat",
+  "description": "Многопользовательский веб-чат в стиле Telegram с 4 полностью проработанными вариантами дизайна (Classic, Graphite, Midnight и Organic), реакциями на сообщения, цитированием и реальным временем.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}

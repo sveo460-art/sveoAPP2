@@ -1,0 +1,16 @@
+[
+  {
+    "id": "usr_admin",
+    "name": "Алексей (Админ)",
+    "color": "#2481cc",
+    "avatarSymbol": "👑",
+    "joinedAt": 1717000000000
+  },
+  {
+    "id": "usr_ai_bot",
+    "name": "Бот-Помощник",
+    "color": "#8a2be2",
+    "avatarSymbol": "🤖",
+    "joinedAt": 1717000000100
+  }
+]
