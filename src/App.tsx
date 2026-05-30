@@ -131,15 +131,25 @@ export default function App() {
     sorted.forEach((msg) => {
       if (!msg.recipientId) return;
       
+      const targetUser = allUsers.find(u => u.id === msg.recipientId);
+      const isGroupOrChannel = targetUser?.type === 'group' || targetUser?.type === 'channel';
+
       let otherId = '';
-      if (msg.userId === currentUser?.id) {
+      let isFromOpponent = false;
+
+      if (isGroupOrChannel) {
         otherId = msg.recipientId;
-      } else if (msg.recipientId === currentUser?.id) {
-        otherId = msg.userId;
+        isFromOpponent = msg.userId !== currentUser?.id;
+      } else {
+        if (msg.userId === currentUser?.id) {
+          otherId = msg.recipientId;
+        } else if (msg.recipientId === currentUser?.id) {
+          otherId = msg.userId;
+          isFromOpponent = true;
+        }
       }
       
       if (otherId) {
-        const isFromOpponent = msg.userId === otherId;
         const currentData = participants.get(otherId) || { unreadCount: 0 };
         participants.set(otherId, {
           lastMsg: msg,
@@ -150,6 +160,13 @@ export default function App() {
       }
     });
     
+    // Auto-add empty groups and channels to the list so users can always access them
+    allUsers.forEach(u => {
+      if ((u.type === 'group' || u.type === 'channel') && !participants.has(u.id)) {
+        participants.set(u.id, { unreadCount: 0 });
+      }
+    });
+
     return Array.from(participants.entries()).map(([otherId, data]) => {
       const otherUser = allUsers.find(u => u.id === otherId);
       return {
@@ -157,6 +174,7 @@ export default function App() {
         name: otherUser?.name || `Пользователь #${otherId.slice(-4)}`,
         color: otherUser?.color || '#3b82f6',
         avatarSymbol: otherUser?.avatarSymbol || '👤',
+        type: otherUser?.type || 'user',
         lastMessage: data.lastMsg,
         unreadCount: data.unreadCount
       };
@@ -168,12 +186,16 @@ export default function App() {
       return !msg.recipientId;
     } else {
       const targetUserId = activeChatId.replace('private_', '');
+      const userOrEntity = allUsers.find(u => u.id === targetUserId);
+      if (userOrEntity?.type === 'group' || userOrEntity?.type === 'channel') {
+        return msg.recipientId === targetUserId;
+      }
       return msg.recipientId && (
         (msg.userId === currentUser?.id && msg.recipientId === targetUserId) ||
         (msg.userId === targetUserId && msg.recipientId === currentUser?.id)
       );
     }
-  }), [messages, activeChatId, currentUser?.id]);
+  }), [messages, activeChatId, currentUser?.id, allUsers]);
 
   const searchedMessages = React.useMemo(() => searchQuery.trim()
     ? displayedMessages.filter(m => m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
