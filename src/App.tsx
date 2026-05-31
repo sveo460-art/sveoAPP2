@@ -94,6 +94,138 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showSearch, setShowSearch] = useState<boolean>(false);
 
+  // States for pinning and muting chats
+  const [pinnedChatIds, setPinnedChatIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('tg_web_chat_pinned');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [mutedChatIds, setMutedChatIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('tg_web_chat_muted');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    chatId: string;
+    chatName: string;
+    isPinned: boolean;
+    isMuted: boolean;
+    x: number;
+    y: number;
+  }>({
+    isOpen: false,
+    chatId: '',
+    chatName: '',
+    isPinned: false,
+    isMuted: false,
+    x: 0,
+    y: 0
+  });
+
+  const touchTimeoutRef = useRef<any>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const blockNextClickRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    localStorage.setItem('tg_web_chat_pinned', JSON.stringify(pinnedChatIds));
+  }, [pinnedChatIds]);
+
+  useEffect(() => {
+    localStorage.setItem('tg_web_chat_muted', JSON.stringify(mutedChatIds));
+  }, [mutedChatIds]);
+
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      if (contextMenu.isOpen) {
+        setContextMenu(prev => ({ ...prev, isOpen: false }));
+      }
+    };
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('contextmenu', handleGlobalClick);
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('contextmenu', handleGlobalClick);
+    };
+  }, [contextMenu.isOpen]);
+
+  const handleChatContextMenu = (e: React.MouseEvent, chatId: string, chatName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const isPinned = pinnedChatIds.includes(chatId);
+    const isMuted = mutedChatIds.includes(chatId);
+    
+    setContextMenu({
+      isOpen: true,
+      chatId,
+      chatName,
+      isPinned,
+      isMuted,
+      x: e.clientX,
+      y: e.clientY
+    });
+  };
+
+  const handleChatTouchStart = (e: React.TouchEvent, chatId: string, chatName: string) => {
+    const touch = e.touches[0];
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    blockNextClickRef.current = false;
+
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+    }
+
+    touchTimeoutRef.current = setTimeout(() => {
+      const isPinned = pinnedChatIds.includes(chatId);
+      const isMuted = mutedChatIds.includes(chatId);
+      
+      setContextMenu({
+        isOpen: true,
+        chatId,
+        chatName,
+        isPinned,
+        isMuted,
+        x: touch.clientX,
+        y: touch.clientY
+      });
+      blockNextClickRef.current = true;
+      
+      if (navigator.vibrate) {
+        navigator.vibrate(40);
+      }
+    }, 450);
+  };
+
+  const handleChatTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPosRef.current) return;
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+    
+    if (dx > 10 || dy > 10) {
+      if (touchTimeoutRef.current) {
+        clearTimeout(touchTimeoutRef.current);
+        touchTimeoutRef.current = null;
+      }
+    }
+  };
+
+  const handleChatTouchEnd = () => {
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+      touchTimeoutRef.current = null;
+    }
+  };
+
   const callDurationTimerRef = useRef<any>(null);
   const callAudioHelperRef = useRef<any>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -215,6 +347,136 @@ export default function App() {
       };
     });
   }, [messages, currentUser?.id, allUsers, joinedEntityIds]);
+
+  const sidebarChats = React.useMemo(() => {
+    const lastGlobalMsg = messages.filter(m => !m.recipientId).slice(-1)[0];
+    const globalChat = {
+      id: 'global',
+      chatIdSelector: 'global',
+      name: 'Общий чат',
+      color: '#0ea5e9',
+      avatarSymbol: '💬',
+      type: 'global' as const,
+      lastMessageText: lastGlobalMsg ? lastGlobalMsg.text : 'Нажмите сюда, чтобы войти в общий чат',
+      lastMessageTime: lastGlobalMsg ? lastGlobalMsg.timestamp : null,
+      unreadCount: 0,
+      isOnline: sseConnected,
+      isPinned: pinnedChatIds.includes('global'),
+      isMuted: mutedChatIds.includes('global')
+    };
+
+    const activeMapped = activeChatsList.map(chat => {
+      const isOnline = onlineUserIds.includes(chat.id);
+      let lastText = 'История пуста';
+      if (chat.lastMessage) {
+        lastText = chat.lastMessage.userId === currentUser?.id ? `Вы: ${chat.lastMessage.text}` : chat.lastMessage.text;
+      }
+      return {
+        id: chat.id,
+        chatIdSelector: `private_${chat.id}`,
+        name: chat.name,
+        color: chat.color,
+        avatarSymbol: chat.avatarSymbol,
+        type: chat.type,
+        lastMessageText: lastText,
+        lastMessageTime: chat.lastMessage ? chat.lastMessage.timestamp : null,
+        unreadCount: chat.unreadCount,
+        isOnline,
+        isPinned: pinnedChatIds.includes(chat.id),
+        isMuted: mutedChatIds.includes(chat.id)
+      };
+    });
+
+    return [globalChat, ...activeMapped];
+  }, [messages, activeChatsList, sseConnected, pinnedChatIds, mutedChatIds, currentUser?.id, onlineUserIds]);
+
+  const pinnedChats = React.useMemo(() => {
+    return sidebarChats.filter(c => c.isPinned).sort((a, b) => {
+      return pinnedChatIds.indexOf(b.id) - pinnedChatIds.indexOf(a.id);
+    });
+  }, [sidebarChats, pinnedChatIds]);
+
+  const unpinnedChats = React.useMemo(() => {
+    const unpinned = sidebarChats.filter(c => !c.isPinned);
+    const globalChat = unpinned.find(c => c.id === 'global');
+    const others = unpinned.filter(c => c.id !== 'global').sort((a, b) => {
+      const timeA = a.lastMessageTime || 0;
+      const timeB = b.lastMessageTime || 0;
+      return timeB - timeA;
+    });
+    return globalChat ? [globalChat, ...others] : others;
+  }, [sidebarChats]);
+
+  const renderChatItem = (chat: any) => {
+    const isOnline = chat.isOnline;
+    const isSelected = activeChatId === chat.chatIdSelector;
+    
+    return (
+      <button
+        key={chat.id}
+        onClick={(e) => {
+          if (blockNextClickRef.current) {
+            e.preventDefault();
+            e.stopPropagation();
+            blockNextClickRef.current = false;
+            return;
+          }
+          setActiveChatId(chat.chatIdSelector);
+          if (!isLandscape) {
+            setShowChatListMobile(false);
+          }
+        }}
+        onContextMenu={(e) => handleChatContextMenu(e, chat.id, chat.name)}
+        onTouchStart={(e) => handleChatTouchStart(e, chat.id, chat.name)}
+        onTouchMove={handleChatTouchMove}
+        onTouchEnd={handleChatTouchEnd}
+        className={`w-full text-left p-3 rounded-xl transition flex items-center gap-3 cursor-pointer select-none relative ${
+          isSelected ? 'bg-[#243241]' : 'hover:bg-[#121c25]'
+        }`}
+        style={{
+          WebkitTouchCallout: 'none',
+          WebkitUserSelect: 'none'
+        }}
+      >
+        <div 
+          className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0 font-bold text-white relative shadow border border-white/10"
+          style={{ backgroundColor: chat.color }}
+        >
+          {chat.avatarSymbol}
+          {chat.unreadCount > 0 && (
+            <span className={`absolute -top-1 -right-1 text-white font-bold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border border-[#17212b] ${
+              chat.isMuted ? 'bg-[#4b5563] border-[#24303f] text-gray-300' : 'bg-[#1aa11a] animate-pulse'
+            }`}>
+              {chat.unreadCount}
+            </span>
+          )}
+          {isOnline && (
+            <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#17212b] animate-pulse" title="В сети" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-0.5">
+            <span className="font-semibold text-sm truncate flex items-center gap-1.5 text-white">
+              {chat.name}
+              {isOnline && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="В сети" />
+              )}
+              {chat.isMuted && (
+                <VolumeX className="w-3.5 h-3.5 text-gray-500 shrink-0" title="Уведомления отключены" />
+              )}
+            </span>
+            <span className="text-[9px] text-gray-400 flex items-center gap-1">
+              {chat.isPinned && <Pin className="w-2.5 h-2.5 text-sky-400 rotate-45 shrink-0" />}
+              {chat.lastMessageTime ? formatLastMessageTime(chat.lastMessageTime) : ''}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-400 truncate">
+            {chat.lastMessageText}
+          </p>
+        </div>
+      </button>
+    );
+  };
 
   const displayedMessages = React.useMemo(() => messages.filter((msg) => {
     if (activeChatId === 'global') {
@@ -1407,8 +1669,8 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <span className="font-bold text-base text-sky-400 select-none">Private Space</span>
                 <span className={`text-[10px] border px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${sseConnected ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-                  {sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>}
-                  {!sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>}
+                  {sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping mr-1"></span>}
+                  {!sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-red-400 mr-1"></span>}
                   {sseConnected ? 'В сети' : 'Сбой'}
                 </span>
               </div>
@@ -1430,94 +1692,38 @@ export default function App() {
             </div>
 
             {/* Chats list scrollable container */}
-            <div className="flex-1 overflow-y-auto divide-y divide-[#24303f]/30 p-2 space-y-1" id="sidebar-chats-scroller">
-              {/* GLOBAL GENERAL CHAT ITEM */}
-              <button
-                onClick={() => {
-                  setActiveChatId('global');
-                  if (!isLandscape) {
-                    setShowChatListMobile(false);
-                  }
-                }}
-                className={`w-full text-left p-3 rounded-xl transition flex items-center gap-3 cursor-pointer ${
-                  activeChatId === 'global' ? 'bg-[#243241]' : 'hover:bg-[#121c25]'
-                }`}
-              >
-                <div className="w-11 h-11 rounded-full bg-sky-500 flex items-center justify-center text-xl shrink-0 shadow relative border border-white/10">
-                  💬
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="font-semibold text-sm truncate">Общий чат</span>
-                    <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300">Общий</span>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5" id="sidebar-chats-scroller">
+              
+              {/* PINNED CHATS SECTION */}
+              {pinnedChats.length > 0 && (
+                <div className="pb-2 border-b border-[#24303f]/20">
+                  <span className="text-[10px] px-3 font-bold text-sky-400 tracking-wider block mb-1.5 uppercase flex items-center gap-1.5 select-none">
+                    <Pin className="w-3 h-3 text-sky-400 rotate-45 shrink-0" />
+                    <span>Закрепленные ({pinnedChats.length})</span>
+                  </span>
+                  <div className="space-y-1">
+                    {pinnedChats.map(chat => renderChatItem(chat))}
                   </div>
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {messages.filter(m => !m.recipientId).slice(-1)[0]?.text || 'Нажмите сюда, чтобы войти в общий чат'}
-                  </p>
                 </div>
-              </button>
+              )}
 
-               {/* PRIVATE CHATS ENTRIES */}
-              <div className="pt-2">
-                <span className="text-[9px] px-3 font-semibold text-gray-400 tracking-wider block mb-1 uppercase">Личные беседы ({activeChatsList.length})</span>
+              {/* UNPINNED CHATS SECTION */}
+              <div className="pt-1.5">
+                <span className="text-[10px] px-3 font-semibold text-gray-400 tracking-wider block mb-1.5 uppercase select-none">
+                  {pinnedChats.length > 0 ? 'Остальные беседы' : 'Личные беседы'} ({unpinnedChats.length})
+                </span>
                 
-                {activeChatsList.length === 0 ? (
-                  <p className="text-xs text-gray-500 p-4 italic text-center leading-normal">
-                    Нет начатых бесед.<br />Нажмите кнопку выше, чтобы выбрать собеседника!
+                {unpinnedChats.length === 0 ? (
+                  <p className="text-xs text-gray-500 p-4 italic text-center leading-normal text-slate-400 leading-normal">
+                    Нет активных бесед.<br />Используйте поиск выше, чтобы выбрать собеседника!
                   </p>
                 ) : (
-                  activeChatsList.map((chat) => {
-                    const isOnline = onlineUserIds.includes(chat.id);
-                    return (
-                      <button
-                        key={chat.id}
-                        onClick={() => {
-                          setActiveChatId(`private_${chat.id}`);
-                          if (!isLandscape) {
-                            setShowChatListMobile(false);
-                          }
-                        }}
-                        className={`w-full text-left p-3 rounded-xl transition flex items-center gap-3 mt-1 cursor-pointer ${
-                          activeChatId === `private_${chat.id}` ? 'bg-[#243241]' : 'hover:bg-[#121c25]'
-                        }`}
-                      >
-                        <div 
-                          className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0 font-bold text-white relative shadow border border-white/10"
-                          style={{ backgroundColor: chat.color }}
-                        >
-                          {chat.avatarSymbol}
-                          {chat.unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-[#1aa11a] text-white font-bold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border border-[#17212b] animate-pulse">
-                              {chat.unreadCount}
-                            </span>
-                          )}
-                          {isOnline && (
-                            <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#17212b] animate-pulse" title="В сети" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className="font-semibold text-sm truncate flex items-center gap-1.5 text-white">
-                              {chat.name}
-                              {isOnline && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="В сети" />
-                              )}
-                            </span>
-                            <span className="text-[9px] text-gray-400">
-                              {chat.lastMessage ? formatLastMessageTime(chat.lastMessage.timestamp) : ''}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-gray-400 truncate">
-                            {chat.lastMessage ? (
-                              chat.lastMessage.userId === currentUser.id ? `Вы: ${chat.lastMessage.text}` : chat.lastMessage.text
-                            ) : 'История пуста'}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })
+                  <div className="space-y-1">
+                    {unpinnedChats.map(chat => renderChatItem(chat))}
+                  </div>
                 )}
               </div>
+
             </div>
 
             {/* Floating Action Button */}
@@ -2216,6 +2422,76 @@ export default function App() {
           </form>
         </div>
       )}
+
+      {contextMenu.isOpen && (() => {
+        const menuBgClass = 
+          activeThemeId === 'classic' ? 'bg-white border-[#dfdfdf] text-gray-800 shadow-xl' :
+          activeThemeId === 'graphite' ? 'bg-[#202020] border-[#333333] text-gray-200 shadow-2xl' :
+          activeThemeId === 'midnight' ? 'bg-[#150d32]/95 border-[#2e1d70]/90 text-violet-200 shadow-2xl' :
+          'bg-[#f4efe1]/95 border-[#dfd8c1] text-stone-850 shadow-xl';
+
+        const hoverBgClass = 
+          activeThemeId === 'classic' ? 'hover:bg-slate-100/80 hover:text-slate-900' :
+          activeThemeId === 'graphite' ? 'hover:bg-neutral-800 hover:text-white' :
+          activeThemeId === 'midnight' ? 'hover:bg-[#251556] hover:text-white' :
+          'hover:bg-stone-200/50 hover:text-stone-900';
+
+        return (
+          <div 
+            className={`fixed z-[9999] w-[184px] h-[82px] rounded-2xl flex flex-col justify-center overflow-hidden border p-1 animate-fade-in backdrop-blur-sm ${menuBgClass}`}
+            style={{ 
+              left: `${Math.min(contextMenu.x, window.innerWidth - 192)}px`, 
+              top: `${Math.min(contextMenu.y, window.innerHeight - 90)}px` 
+            }}
+            onClick={(e) => e.stopPropagation()}
+            id="chat-context-menu"
+          >
+            {/* Toggle Pin/Unpin */}
+            <button
+              onClick={() => {
+                const isPinned = pinnedChatIds.includes(contextMenu.chatId);
+                if (isPinned) {
+                  setPinnedChatIds(prev => prev.filter(id => id !== contextMenu.chatId));
+                  showToast(`Чат "${contextMenu.chatName}" откреплен`);
+                } else {
+                  setPinnedChatIds(prev => [...prev, contextMenu.chatId]);
+                  showToast(`Чат "${contextMenu.chatName}" закреплен сверху`);
+                }
+                setContextMenu(prev => ({ ...prev, isOpen: false }));
+              }}
+              className={`flex items-center gap-2.5 w-full text-left px-3 py-1.5 text-xs font-semibold rounded-xl transition duration-150 cursor-pointer ${hoverBgClass}`}
+              id="btn-context-menu-pin"
+            >
+              <Pin className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${contextMenu.isPinned ? 'text-sky-450 rotate-45' : 'text-gray-400'}`} />
+              <span>{contextMenu.isPinned ? 'Открепить' : 'Закрепить'}</span>
+            </button>
+
+            {/* Toggle Muted/Unmuted */}
+            <button
+              onClick={() => {
+                const isMuted = mutedChatIds.includes(contextMenu.chatId);
+                if (isMuted) {
+                  setMutedChatIds(prev => prev.filter(id => id !== contextMenu.chatId));
+                  showToast(`Уведомления от "${contextMenu.chatName}" включены`);
+                } else {
+                  setMutedChatIds(prev => [...prev, contextMenu.chatId]);
+                  showToast(`Уведомления от "${contextMenu.chatName}" отключены`);
+                }
+                setContextMenu(prev => ({ ...prev, isOpen: false }));
+              }}
+              className={`flex items-center gap-2.5 w-full text-left px-3 py-1.5 text-xs font-semibold rounded-xl transition duration-150 cursor-pointer ${hoverBgClass}`}
+              id="btn-context-menu-mute"
+            >
+              {contextMenu.isMuted ? (
+                <Volume2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+              ) : (
+                <VolumeX className="w-3.5 h-3.5 shrink-0 text-gray-400 animation-pulse" />
+              )}
+              <span>{contextMenu.isMuted ? 'Вкл. звук' : 'Без звука'}</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {isSearchEntitiesOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" id="search-entities-backdrop">
