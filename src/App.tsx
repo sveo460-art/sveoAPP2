@@ -143,6 +143,14 @@ export default function App() {
 
   const activeTheme = React.useMemo(() => CHAT_THEMES.find((t) => t.id === activeThemeId) || CHAT_THEMES[0], [activeThemeId]);
 
+  useEffect(() => {
+    if (activeTheme.isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [activeTheme]);
+
   const activeChatsList = React.useMemo(() => {
     const participants: Map<string, { lastMsg?: Message; unreadCount: number }> = new Map();
     
@@ -1217,7 +1225,12 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden bg-gray-100 font-sans relative" id="app-root-layout">
+    <div className={`h-screen w-full flex flex-col overflow-hidden font-sans relative transition-colors duration-350 ${
+      activeThemeId === 'classic' ? 'bg-[#e7ebf0]' :
+      activeThemeId === 'graphite' ? 'bg-[#181818] text-gray-100' :
+      activeThemeId === 'midnight' ? 'bg-gradient-to-b from-[#0f0c1b] to-[#1a103c] text-violet-100' :
+      'bg-[#f4efe1]'
+    }`} id="app-root-layout">
       {/* Active Call Floating Card UI */}
       {activeCall && (() => {
         const isCaller = activeCall.role === 'caller';
@@ -1317,12 +1330,22 @@ export default function App() {
       })()}
 
       <div 
-        className={`bg-sky-500/10 border-b border-sky-500/15 flex items-center justify-between text-xs overflow-x-auto gap-4 shrink-0 transition-all duration-350 ${
+        className={`flex items-center justify-between text-xs overflow-x-auto gap-4 shrink-0 transition-all duration-350 border-b ${
           isLandscape ? 'py-1 px-3 text-[11px]' : 'py-2 px-4'
+        } ${
+          activeThemeId === 'classic' ? 'bg-[#517da2]/10 border-[#517da2]/20 text-[#517da2]' :
+          activeThemeId === 'graphite' ? 'bg-[#212121] border-[#2d2d2d] text-gray-300' :
+          activeThemeId === 'midnight' ? 'bg-[#130b2e]/95 border-[#2b196b] text-violet-200' :
+          'bg-[#e2f0d9]/25 border-[#dfd8c1] text-[#487a53]'
         }`} 
         id="design-selector-showcase-bar"
       >
-        <div className="flex items-center gap-2 text-sky-800 dark:text-sky-300 font-medium shrink-0">
+        <div className={`flex items-center gap-2 font-medium shrink-0 ${
+          activeThemeId === 'classic' ? 'text-sky-850' :
+          activeThemeId === 'graphite' ? 'text-gray-300' :
+          activeThemeId === 'midnight' ? 'text-violet-250' :
+          'text-stone-850'
+        }`}>
           <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
           <span className="hidden md:inline">{isLandscape ? 'Оформление:' : 'Сайт поддерживает 4 оформленных темы. Выберите свой идеальный дизайн:'}</span>
           <span className="md:hidden">{isLandscape ? 'Темы:' : 'Дизайн:'}</span>
@@ -1336,13 +1359,17 @@ export default function App() {
                 key={theme.id}
                 onClick={() => handleSelectTheme(theme.id)}
                 id={`quick-theme-${theme.id}`}
-                className={`transition-all rounded-full font-semibold ${
+                className={`transition-all rounded-full font-semibold cursor-pointer ${
                   isLandscape ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
                 } ${
                   isSelected 
-                    ? 'bg-sky-500 text-white shadow-sm scale-102' 
-                    : 'bg-white/80 dark:bg-neutral-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 hover:text-gray-900 border border-gray-200 dark:border-neutral-700'
+                    ? 'text-white shadow-sm scale-102 font-bold' 
+                    : activeThemeId === 'classic' ? 'bg-white/80 text-sky-800 border border-sky-200/50 hover:bg-gray-50' :
+                      activeThemeId === 'graphite' ? 'bg-neutral-800 text-gray-300 border border-neutral-700/60 hover:bg-neutral-700 hover:text-white' :
+                      activeThemeId === 'midnight' ? 'bg-[#1e1348]/90 text-violet-200 border border-[#392383]/60 hover:bg-[#281a62] hover:text-white' :
+                      'bg-stone-100/90 text-stone-750 border border-[#dfd8c1] hover:bg-white/80 hover:text-stone-900'
                 }`}
+                style={isSelected ? { backgroundColor: theme.themeColor } : undefined}
               >
                 {theme.id === 'classic' && '🔹 Classic'}
                 {theme.id === 'graphite' && '🖤 Graphite'}
@@ -1355,7 +1382,12 @@ export default function App() {
 
         <button
           onClick={() => setIsThemeSelectorOpen(true)}
-          className="text-sky-600 dark:text-sky-400 font-bold hover:underline shrink-0 flex items-center gap-1"
+          className={`font-semibold hover:underline shrink-0 flex items-center gap-1 cursor-pointer ${
+            activeThemeId === 'classic' ? 'text-sky-600 hover:text-sky-700' :
+            activeThemeId === 'graphite' ? 'text-sky-400 hover:text-sky-300' :
+            activeThemeId === 'midnight' ? 'text-violet-400 hover:text-violet-300' :
+            'text-emerald-700 hover:text-emerald-600'
+          }`}
           id="btn-all-variants"
         >
           {isLandscape ? 'Сравнить UX →' : (
