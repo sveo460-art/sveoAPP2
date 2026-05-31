@@ -1630,15 +1630,23 @@ export default function App() {
                   <Search className="w-4 h-4" />
                 </button>
 
-                {activeChatId !== 'global' && activeChatId !== `private_${currentUser?.id}` && (
-                  <button
-                    onClick={() => handleStartCall(activeChatId.replace('private_', ''))}
-                    className="p-2 hover:bg-[#10b981]/15 hover:text-emerald-400 text-white rounded-xl transition cursor-pointer flex items-center justify-center shrink-0 bg-emerald-500/10 border border-emerald-500/25 active:scale-95 animate-fade-in"
-                    title="Позвонить"
-                  >
-                    <Phone className="w-4 h-4 text-emerald-400" />
-                  </button>
-                )}
+                {(() => {
+                  if (activeChatId === 'global' || activeChatId === `private_${currentUser?.id}`) return null;
+                  const otherId = activeChatId.replace('private_', '');
+                  const otherEntity = allUsers.find(u => u.id === otherId);
+                  const isGroupOrChannel = otherEntity?.type === 'group' || otherEntity?.type === 'channel';
+                  if (isGroupOrChannel) return null;
+
+                  return (
+                    <button
+                      onClick={() => handleStartCall(otherId)}
+                      className="p-2 hover:bg-[#10b981]/15 hover:text-emerald-400 text-white rounded-xl transition cursor-pointer flex items-center justify-center shrink-0 bg-emerald-500/10 border border-emerald-500/25 active:scale-95 animate-fade-in"
+                      title="Позвонить"
+                    >
+                      <Phone className="w-4 h-4 text-emerald-400" />
+                    </button>
+                  );
+                })()}
                 <button
                   onClick={() => setIsThemeSelectorOpen(true)}
                   className={`hover:scale-102 active:scale-95 transition-all bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1 cursor-pointer ${
