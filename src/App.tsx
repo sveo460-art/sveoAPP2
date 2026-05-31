@@ -2173,19 +2173,74 @@ export default function App() {
               />
 
               <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" id="contacts-scroller-layout">
-                {allUsers
-                  .filter(u => u.type !== 'group' && u.type !== 'channel')
-                  .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
-                  .length === 0 ? (
-                    <div className="text-center py-6">
-                      <p className="text-xs text-gray-400 font-medium mb-1">Пользователи не найдены</p>
-                      <p className="text-[10px] text-gray-500">Попробуйте ввести другое имя для поиска в базе данных</p>
-                    </div>
-                  ) : (
-                    allUsers
-                      .filter(u => u.type !== 'group' && u.type !== 'channel')
-                      .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
-                      .map((u) => (
+                {(() => {
+                  const filtered = allUsers
+                    .filter(u => u.type !== 'group' && u.type !== 'channel')
+                    .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()));
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="text-center py-6">
+                        <p className="text-xs text-gray-400 font-medium mb-1">Никого не найдено</p>
+                        <p className="text-[10px] text-gray-500">Попробуйте ввести другое имя для поиска в базе данных</p>
+                      </div>
+                    );
+                  }
+
+                  const me = filtered.find(u => u.id === currentUser?.id);
+                  const others = filtered.filter(u => u.id !== currentUser?.id);
+
+                  return (
+                    <>
+                      {me && (
+                        <button
+                          key={me.id}
+                          onClick={() => {
+                            setActiveChatId(`private_${me.id}`);
+                            setIsNewPmModalOpen(false);
+                            setShowChatListMobile(false);
+                          }}
+                          className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
+                        >
+                          <div 
+                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
+                            style={{ backgroundColor: me.color }}
+                          >
+                            <span className="scale-[0.8]">{me.avatarSymbol}</span>
+                            {onlineUserIds.includes(me.id) && (
+                              <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-[#17212b]" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold truncate text-white">
+                                {me.name}
+                              </p>
+                              <span className="text-gray-400 text-xs font-normal">(Вы / Избранное)</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1 mt-0.5">
+                              Сохраненные сообщения
+                            </span>
+                          </div>
+                        </button>
+                      )}
+                      
+                      {others.length === 0 && !me && (
+                        <div className="text-center py-6">
+                          <p className="text-xs text-gray-400 font-medium mb-1">Никого не найдено</p>
+                        </div>
+                      )}
+
+                      {others.length === 0 && !!me && !newPmSearchName && (
+                        <div className="text-center py-5 border-t border-white/5 mt-2">
+                          <p className="text-[11px] text-gray-500 italic pb-1">Нет других участников</p>
+                          <p className="text-[10px] text-gray-500 leading-normal max-w-[200px] mx-auto">
+                            Вы единственный пользователь в базе данных. Вы можете общаться с собой или подождать других собеседников.
+                          </p>
+                        </div>
+                      )}
+
+                      {others.map((u) => (
                         <button
                           key={u.id}
                           onClick={() => {
@@ -2207,7 +2262,7 @@ export default function App() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
                               <p className="text-xs font-bold truncate text-white">
-                                {u.name} {u.id === currentUser?.id && <span className="text-gray-400 font-normal">(Вы / Избранное)</span>}
+                                {u.name}
                               </p>
                               {onlineUserIds.includes(u.id) && (
                                 <span className="bg-emerald-500/15 text-emerald-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
@@ -2221,8 +2276,10 @@ export default function App() {
                             </span>
                           </div>
                         </button>
-                      ))
-                  )}
+                      ))}
+                    </>
+                  );
+                })()}
               </div>
             </div>
             

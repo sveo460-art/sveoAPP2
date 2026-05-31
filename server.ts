@@ -153,7 +153,8 @@ setInterval(() => {
     }
   });
   if (changed) {
-    broadcastEvent("online_count", { count: clients.length, onlineUsers: getOnlineUserIds() });
+    const updatedOnlineUsers = getOnlineUserIds();
+    broadcastEvent("online_count", { count: updatedOnlineUsers.length, onlineUsers: updatedOnlineUsers });
   }
 }, 15000);
 
@@ -187,13 +188,15 @@ async function startServer() {
     const clientId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
     clients.push({ id: clientId, userId, res });
 
-    res.write(`event: connected\ndata: ${JSON.stringify({ clientId, onlineCount: clients.length, onlineUsers: getOnlineUserIds() })}\n\n`);
+    const onlineUsers = getOnlineUserIds();
+    res.write(`event: connected\ndata: ${JSON.stringify({ clientId, onlineCount: onlineUsers.length, onlineUsers: onlineUsers })}\n\n`);
 
-    broadcastEvent("online_count", { count: clients.length, onlineUsers: getOnlineUserIds() });
+    broadcastEvent("online_count", { count: onlineUsers.length, onlineUsers: onlineUsers });
 
     req.on("close", () => {
       clients = clients.filter((c) => c.id !== clientId);
-      broadcastEvent("online_count", { count: clients.length, onlineUsers: getOnlineUserIds() });
+      const updatedOnlineUsers = getOnlineUserIds();
+      broadcastEvent("online_count", { count: updatedOnlineUsers.length, onlineUsers: updatedOnlineUsers });
     });
   });
 
