@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Message, ThemeId, ChatTheme, TypingState } from './types';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { auth } from './firebase';
+import { signOut } from 'firebase/auth';
 import { ThemeSelector, CHAT_THEMES } from './components/ThemeSelector';
 import { VoiceMessagePlayer } from './components/VoiceMessagePlayer';
 import { CallAudioHelper } from './lib/audio';
@@ -1465,6 +1467,11 @@ export default function App() {
   const handleLogout = () => {
     if (sseRef.current) {
       sseRef.current.close();
+    }
+    try {
+      signOut(auth).catch(console.error);
+    } catch (e) {
+      console.error(e);
     }
     localStorage.removeItem('tg_web_chat_user');
     setCurrentUser(null);
