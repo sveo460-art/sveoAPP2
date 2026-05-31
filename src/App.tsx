@@ -1337,8 +1337,9 @@ export default function App() {
             <div className="p-4 border-b border-[#24303f] flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-base text-sky-400 select-none">Private Space</span>
-                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-emerald-400 font-bold flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span className={`text-[10px] border px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${sseConnected ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+                  {sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>}
+                  {!sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>}
                   {sseConnected ? 'В сети' : 'Сбой'}
                 </span>
               </div>

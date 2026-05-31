@@ -54,13 +54,6 @@ try {
   if (fs.existsSync(MESSAGES_FILE)) {
     const data = fs.readFileSync(MESSAGES_FILE, "utf-8");
     messages = JSON.parse(data);
-    messages = messages.filter((m) => 
-      m.id !== "seed-1" && 
-      m.userId !== "usr_admin" && 
-      m.userId !== "usr_ai_bot" && 
-      m.recipientId !== "usr_admin" && 
-      m.recipientId !== "usr_ai_bot"
-    );
     if (messages.length > 300) {
       messages = messages.slice(messages.length - 300);
     }
@@ -83,15 +76,6 @@ try {
 } catch (e) {
   console.error("Failed to load users", e);
 }
-
-registeredUsers = registeredUsers.filter(u => 
-  u.id !== "usr_pavel" && 
-  u.name !== "Pavel Durov" && 
-  u.name !== "Telegram Bot" && 
-  u.name !== "Telegram Support Bot" &&
-  u.id !== "usr_admin" &&
-  u.id !== "usr_ai_bot"
-);
 
 try {
   fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
