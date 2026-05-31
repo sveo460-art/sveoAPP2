@@ -25,6 +25,7 @@ export interface User {
   joinedAt: number;
   type?: 'user' | 'group' | 'channel';
   creatorId?: string;
+  bio?: string;
 }
 
 export interface Message {

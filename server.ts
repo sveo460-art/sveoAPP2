@@ -14,6 +14,7 @@ interface ServerUser {
   joinedAt: number;
   type?: 'user' | 'group' | 'channel';
   creatorId?: string;
+  bio?: string;
 }
 
 interface ServerMessage {
@@ -608,9 +609,35 @@ async function startServer() {
       avatarSymbol: u.avatarSymbol,
       joinedAt: u.joinedAt,
       type: u.type || 'user',
-      creatorId: u.creatorId
+      creatorId: u.creatorId,
+      bio: u.bio
     }));
     return res.json(safeList);
+  });
+
+  app.post("/api/users/update", (req, res) => {
+    const { id, name, avatarSymbol, color, bio } = req.body;
+    if (!id || !name) {
+      return res.status(400).json({ error: "id and name are required" });
+    }
+    const user = registeredUsers.find(u => u.id === id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    user.name = name.trim();
+    if (avatarSymbol) user.avatarSymbol = avatarSymbol;
+    if (color) user.color = color;
+    user.bio = bio || "";
+
+    try {
+      fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
+      broadcastEvent("users_updated", { type: "user_profile_updated", userId: id });
+    } catch (e) {
+      console.error("Save users update error", e);
+    }
+
+    const { password: _, ...safeUser } = user;
+    return res.json(safeUser);
   });
 
   app.post("/api/groups", (req, res) => {

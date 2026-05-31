@@ -8,7 +8,7 @@ import {
   Send, Smile, CornerUpLeft, Trash2, Sparkles, CheckCheck, Check,
   ChevronDown, X, Info, Phone, Video, Search, MessageSquare, Edit3, Heart, LogOut,
   Paperclip, Camera, Image, Mic, Play, Pause, Volume2, Plus, ArrowLeft,
-  Bookmark, Pin, MicOff, VolumeX
+  Bookmark, Pin, MicOff, VolumeX, Settings, User as LucideUser
 } from 'lucide-react';
 
 const POPULAR_REACTIONS = ['👍', '🔥', '❤️', '😂', '😮', '🎉', '💩'];
@@ -60,6 +60,7 @@ export default function App() {
   }, [joinedEntityIds, currentUser]);
 
   const [isThemeSelectorOpen, setIsThemeSelectorOpen] = useState<boolean>(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'chats' | 'settings'>('chats');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
   const [typingUsers, setTypingUsers] = useState<any[]>([]);
   
@@ -77,6 +78,7 @@ export default function App() {
   const [editName, setEditName] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [editColor, setEditColor] = useState('');
+  const [editBio, setEditBio] = useState('');
 
   const [loading, setLoading] = useState<boolean>(true);
   const [sseConnected, setSseConnected] = useState<boolean>(false);
@@ -1422,10 +1424,11 @@ export default function App() {
     setEditName(currentUser.name);
     setEditAvatar(currentUser.avatarSymbol);
     setEditColor(currentUser.color);
+    setEditBio(currentUser.bio || '');
     setIsEditProfileOpen(true);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !editName.trim()) return;
 
@@ -1434,11 +1437,29 @@ export default function App() {
       name: editName.trim(),
       avatarSymbol: editAvatar,
       color: editColor,
+      bio: editBio.trim()
     };
 
     setCurrentUser(updatedUser);
     localStorage.setItem('tg_web_chat_user', JSON.stringify(updatedUser));
     setIsEditProfileOpen(false);
+
+    try {
+      await fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentUser.id,
+          name: editName.trim(),
+          avatarSymbol: editAvatar,
+          color: editColor,
+          bio: editBio.trim()
+        })
+      });
+      showToast('Профиль успешно обновлен!');
+    } catch (err) {
+      console.error('Failed to update profile on backend:', err);
+    }
   };
 
   const handleCreateEntity = async (e: React.FormEvent) => {
@@ -1591,176 +1612,197 @@ export default function App() {
         );
       })()}
 
-      <div 
-        className={`flex items-center justify-between text-xs overflow-x-auto gap-4 shrink-0 transition-all duration-350 border-b ${
-          isLandscape ? 'py-1 px-3 text-[11px]' : 'py-2 px-4'
-        } ${
-          activeThemeId === 'classic' ? 'bg-[#517da2]/10 border-[#517da2]/20 text-[#517da2]' :
-          activeThemeId === 'graphite' ? 'bg-[#212121] border-[#2d2d2d] text-gray-300' :
-          activeThemeId === 'midnight' ? 'bg-[#130b2e]/95 border-[#2b196b] text-violet-200' :
-          'bg-[#e2f0d9]/25 border-[#dfd8c1] text-[#487a53]'
-        }`} 
-        id="design-selector-showcase-bar"
-      >
-        <div className={`flex items-center gap-2 font-medium shrink-0 ${
-          activeThemeId === 'classic' ? 'text-sky-850' :
-          activeThemeId === 'graphite' ? 'text-gray-300' :
-          activeThemeId === 'midnight' ? 'text-violet-250' :
-          'text-stone-850'
-        }`}>
-          <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
-          <span className="hidden md:inline">{isLandscape ? 'Оформление:' : 'Сайт поддерживает 4 оформленных темы. Выберите свой идеальный дизайн:'}</span>
-          <span className="md:hidden">{isLandscape ? 'Темы:' : 'Дизайн:'}</span>
-        </div>
-        
-        <div className="flex items-center gap-1 shrink-0" id="themes-quick-toggle-group">
-          {CHAT_THEMES.map((theme) => {
-            const isSelected = theme.id === activeThemeId;
-            return (
-              <button
-                key={theme.id}
-                onClick={() => handleSelectTheme(theme.id)}
-                id={`quick-theme-${theme.id}`}
-                className={`transition-all rounded-full font-semibold cursor-pointer ${
-                  isLandscape ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
-                } ${
-                  isSelected 
-                    ? 'text-white shadow-sm scale-102 font-bold' 
-                    : activeThemeId === 'classic' ? 'bg-white/80 text-sky-800 border border-sky-200/50 hover:bg-gray-50' :
-                      activeThemeId === 'graphite' ? 'bg-neutral-800 text-gray-300 border border-neutral-700/60 hover:bg-neutral-700 hover:text-white' :
-                      activeThemeId === 'midnight' ? 'bg-[#1e1348]/90 text-violet-200 border border-[#392383]/60 hover:bg-[#281a62] hover:text-white' :
-                      'bg-stone-100/90 text-stone-750 border border-[#dfd8c1] hover:bg-white/80 hover:text-stone-900'
-                }`}
-                style={isSelected ? { backgroundColor: theme.themeColor } : undefined}
-              >
-                {theme.id === 'classic' && '🔹 Classic'}
-                {theme.id === 'graphite' && '🖤 Graphite'}
-                {theme.id === 'midnight' && '🧙‍♂️ Midnight'}
-                {theme.id === 'organic' && '🌿 Organic'}
-              </button>
-            );
-          })}
-        </div>
-
-        <button
-          onClick={() => setIsThemeSelectorOpen(true)}
-          className={`font-semibold hover:underline shrink-0 flex items-center gap-1 cursor-pointer ${
-            activeThemeId === 'classic' ? 'text-sky-600 hover:text-sky-700' :
-            activeThemeId === 'graphite' ? 'text-sky-400 hover:text-sky-300' :
-            activeThemeId === 'midnight' ? 'text-violet-400 hover:text-violet-300' :
-            'text-emerald-700 hover:text-emerald-600'
-          }`}
-          id="btn-all-variants"
-        >
-          {isLandscape ? 'Сравнить UX →' : (
-            <>
-              <span className="hidden sm:inline">Смотреть сравнение моделей →</span>
-              <span className="inline sm:hidden">Сравнить →</span>
-            </>
-          )}
-        </button>
-      </div>
-
       <div className="flex-1 flex overflow-hidden relative" id="chat-workspace-row">
 
         {((!isLandscape && showChatListMobile) || isLandscape) && (
           <div className={`${isLandscape ? 'w-80 border-r border-gray-200 dark:border-neutral-800' : 'w-full'} h-full flex flex-col bg-[#17212b] text-white shrink-0 relative z-20`} id="chat-sidebar">
-            <div className="p-4 border-b border-[#24303f] flex flex-col gap-3 shrink-0">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-base text-sky-400 select-none">Private Space</span>
-                <span className={`text-[10px] border px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${sseConnected ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-                  {sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping mr-1"></span>}
-                  {!sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-red-400 mr-1"></span>}
-                  {sseConnected ? 'В сети' : 'Сбой'}
-                </span>
-              </div>
+            
+            {activeSidebarTab === 'chats' ? (
+              <>
+                <div className="p-4 border-b border-[#24303f] flex flex-col gap-3 shrink-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-base text-sky-400 select-none">Private Space</span>
+                    <span className={`text-[10px] border px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${sseConnected ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+                      {sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping mr-1"></span>}
+                      {!sseConnected && <span className="w-1.5 h-1.5 rounded-full bg-red-400 mr-1"></span>}
+                      {sseConnected ? 'В сети' : 'Сбой'}
+                    </span>
+                  </div>
 
-              <div className="w-full">
+                  <div className="w-full">
+                    <button
+                      onClick={() => {
+                        setNewPmSearchName('');
+                        loadUsersList();
+                        setIsSearchEntitiesOpen(true);
+                      }}
+                      className="w-full bg-white/10 hover:bg-white/15 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-white/5 cursor-pointer"
+                      title="Поиск чатов, каналов и контактов"
+                    >
+                      <Search className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span>Поиск чатов</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Chats list scrollable container */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-1.5" id="sidebar-chats-scroller">
+                  
+                  {/* PINNED CHATS SECTION */}
+                  {pinnedChats.length > 0 && (
+                    <div className="pb-2 border-b border-[#24303f]/20">
+                      <span className="text-[10px] px-3 font-bold text-sky-400 tracking-wider block mb-1.5 uppercase flex items-center gap-1.5 select-none">
+                        <Pin className="w-3 h-3 text-sky-400 rotate-45 shrink-0" />
+                        <span>Закрепленные ({pinnedChats.length})</span>
+                      </span>
+                      <div className="space-y-1">
+                        {pinnedChats.map(chat => renderChatItem(chat))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* UNPINNED CHATS SECTION */}
+                  <div className="pt-1.5">
+                    <span className="text-[10px] px-3 font-semibold text-gray-400 tracking-wider block mb-1.5 uppercase select-none">
+                      {pinnedChats.length > 0 ? 'Остальные беседы' : 'Личные беседы'} ({unpinnedChats.length})
+                    </span>
+                    
+                    {unpinnedChats.length === 0 ? (
+                      <p className="text-xs text-gray-500 p-4 italic text-center leading-normal text-slate-400 leading-normal">
+                        Нет activeных бесед.<br />Используйте поиск выше, чтобы выбрать собеседника!
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {unpinnedChats.map(chat => renderChatItem(chat))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Floating Action Button */}
                 <button
-                  onClick={() => {
-                    setNewPmSearchName('');
-                    loadUsersList();
-                    setIsSearchEntitiesOpen(true);
-                  }}
-                  className="w-full bg-white/10 hover:bg-white/15 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-white/5 cursor-pointer"
-                  title="Поиск чатов, каналов и контактов"
+                  onClick={() => setIsCreateEntityOpen('group')}
+                  className={`absolute bottom-[72px] right-4 z-30 bg-sky-500 hover:bg-sky-600 active:scale-95 shadow-lg shadow-sky-500/30 text-white rounded-full flex items-center justify-center cursor-pointer transition ${isLandscape ? 'p-3' : 'p-3 sm:p-4'}`}
+                  title="Создать группу или канал"
                 >
-                  <Search className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>Поиск чатов</span>
+                  <Plus className="w-6 h-6 shrink-0" />
                 </button>
-              </div>
-            </div>
-
-            {/* Chats list scrollable container */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5" id="sidebar-chats-scroller">
-              
-              {/* PINNED CHATS SECTION */}
-              {pinnedChats.length > 0 && (
-                <div className="pb-2 border-b border-[#24303f]/20">
-                  <span className="text-[10px] px-3 font-bold text-sky-400 tracking-wider block mb-1.5 uppercase flex items-center gap-1.5 select-none">
-                    <Pin className="w-3 h-3 text-sky-400 rotate-45 shrink-0" />
-                    <span>Закрепленные ({pinnedChats.length})</span>
-                  </span>
-                  <div className="space-y-1">
-                    {pinnedChats.map(chat => renderChatItem(chat))}
+              </>
+            ) : (
+              <>
+                <div className="p-4 border-b border-[#24303f] flex flex-col gap-3 shrink-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-base text-sky-400 select-none">Настройки</span>
+                    <span className="text-[10px] bg-sky-500/10 border border-sky-500/20 text-sky-300 px-2.5 py-0.5 rounded-full font-bold">
+                      Приложение
+                    </span>
                   </div>
                 </div>
-              )}
 
-              {/* UNPINNED CHATS SECTION */}
-              <div className="pt-1.5">
-                <span className="text-[10px] px-3 font-semibold text-gray-400 tracking-wider block mb-1.5 uppercase select-none">
-                  {pinnedChats.length > 0 ? 'Остальные беседы' : 'Личные беседы'} ({unpinnedChats.length})
-                </span>
-                
-                {unpinnedChats.length === 0 ? (
-                  <p className="text-xs text-gray-500 p-4 italic text-center leading-normal text-slate-400 leading-normal">
-                    Нет активных бесед.<br />Используйте поиск выше, чтобы выбрать собеседника!
-                  </p>
-                ) : (
-                  <div className="space-y-1">
-                    {unpinnedChats.map(chat => renderChatItem(chat))}
+                {/* Settings list scrollable container styled like chats list */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-1.5" id="sidebar-settings-scroller">
+                  <div className="pt-1.5">
+                    <span className="text-[10px] px-3 font-semibold text-gray-400 tracking-wider block mb-1.5 uppercase select-none">
+                      Основные настройки
+                    </span>
+
+                    <button
+                      onClick={() => setIsThemeSelectorOpen(true)}
+                      className="w-full text-left p-3 rounded-xl transition flex items-center gap-3 cursor-pointer select-none hover:bg-[#121c25]"
+                      id="btn-settings-choose-theme"
+                      type="button"
+                    >
+                      <div className="w-11 h-11 rounded-full bg-sky-500 flex items-center justify-center text-xl shrink-0 font-bold text-white shadow border border-white/10">
+                        🎨
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="font-semibold text-sm truncate text-white">Выбор темы</span>
+                          <span className="text-[9px] bg-slate-800 px-1.5 py-0.5 rounded text-sky-300 font-bold border border-slate-700/50 uppercase shrink-0">
+                            Оформление
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 truncate">
+                          Настроить цветовую схему и дизайн интерфейса
+                        </p>
+                      </div>
+                    </button>
                   </div>
-                )}
-              </div>
-
-            </div>
-
-            {/* Floating Action Button */}
-            <button
-              onClick={() => setIsCreateEntityOpen('group')}
-              className={`absolute bottom-[72px] right-4 z-30 bg-sky-500 hover:bg-sky-600 active:scale-95 shadow-lg shadow-sky-500/30 text-white rounded-full flex items-center justify-center cursor-pointer transition ${isLandscape ? 'p-3' : 'p-3 sm:p-4'}`}
-              title="Создать группу или канал"
-            >
-              <Plus className="w-6 h-6 shrink-0" />
-            </button>
-
-            {/* Current user profile info in sidebar footer */}
-            <div className="p-3 bg-[#111a22] border-t border-[#24303f] flex items-center justify-between shrink-0 text-xs text-gray-400">
-              <div 
-                className="flex items-center gap-2 min-w-0 cursor-pointer hover:opacity-80 transition"
-                onClick={openEditProfile}
-                title="Настроить профиль"
-              >
-                <div 
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 border border-white/10 shadow"
-                  style={{ backgroundColor: currentUser.color }}
-                >
-                  {currentUser.avatarSymbol}
                 </div>
-                <div className="flex flex-col text-left min-w-0 leading-none">
-                  <span className="truncate font-semibold text-white text-[11px] mb-0.5">{currentUser.name}</span>
-                  <span className="text-[9px] text-[#5cc4ff]">Настройки</span>
+              </>
+            )}
+
+            {/* New Navigation bottom panel replacing user profile in sidebar footer */}
+            {(() => {
+              const navBgClass = 
+                activeThemeId === 'classic' ? 'bg-[#111a22] border-[#24303f]' :
+                activeThemeId === 'graphite' ? 'bg-[#1c1c1c] border-[#2d2d2d]' :
+                activeThemeId === 'midnight' ? 'bg-[#0f0724] border-[#23154e]' :
+                'bg-[#ece6d5] border-[#dfd8c1]';
+
+              const navActiveColorClass = 
+                activeThemeId === 'classic' ? 'text-sky-400' :
+                activeThemeId === 'graphite' ? 'text-white font-bold' :
+                activeThemeId === 'midnight' ? 'text-violet-400 font-bold' :
+                'text-emerald-700 font-bold';
+
+              const navInactiveColorClass = 
+                activeThemeId === 'classic' ? 'text-gray-400 hover:text-white' :
+                activeThemeId === 'graphite' ? 'text-neutral-500 hover:text-neutral-300' :
+                activeThemeId === 'midnight' ? 'text-violet-500 hover:text-violet-300' :
+                'text-stone-500 hover:text-stone-850';
+
+              return (
+                <div className={`p-2 border-t font-sans flex items-center justify-around shrink-0 text-xs transition-colors duration-350 ${navBgClass}`} id="sidebar-nav-tabs">
+                  {/* Chats tab */}
+                  <button
+                    onClick={() => {
+                      setActiveSidebarTab('chats');
+                      if (!isLandscape) {
+                        setShowChatListMobile(true);
+                      }
+                    }}
+                    className={`flex flex-col items-center gap-1 py-1 px-3 flex-1 text-center font-medium transition duration-200 cursor-pointer ${
+                      activeSidebarTab === 'chats' ? navActiveColorClass : navInactiveColorClass
+                    }`}
+                    id="nav-tab-chats"
+                    type="button"
+                  >
+                    <MessageSquare className="w-5 h-5 shrink-0" />
+                    <span className="text-[10px] select-none">Чаты</span>
+                  </button>
+
+                  {/* Settings tab (opens settings sidebar view) */}
+                  <button
+                    onClick={() => {
+                      setActiveSidebarTab('settings');
+                      if (!isLandscape) {
+                        setShowChatListMobile(true);
+                      }
+                    }}
+                    className={`flex flex-col items-center gap-1 py-1 px-3 flex-1 text-center font-medium transition duration-200 cursor-pointer ${
+                      activeSidebarTab === 'settings' ? navActiveColorClass : navInactiveColorClass
+                    }`}
+                    id="nav-tab-settings"
+                    type="button"
+                  >
+                    <Settings className="w-5 h-5 shrink-0" />
+                    <span className="text-[10px] select-none">Настройки</span>
+                  </button>
+
+                  {/* Profile tab (opens edit profile) */}
+                  <button
+                    onClick={openEditProfile}
+                    className={`flex flex-col items-center gap-1 py-1 px-3 flex-1 text-center font-medium transition duration-200 cursor-pointer ${navInactiveColorClass}`}
+                    id="nav-tab-profile"
+                    type="button"
+                  >
+                    <LucideUser className="w-5 h-5 shrink-0" />
+                    <span className="text-[10px] select-none">Профиль</span>
+                  </button>
                 </div>
-              </div>
-              <button 
-                onClick={handleLeaveChat} 
-                className="text-red-400 hover:text-red-300 font-semibold transition flex items-center gap-1 py-1 px-2 hover:bg-red-500/10 rounded-lg cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                Выход
-              </button>
-            </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1885,16 +1927,6 @@ export default function App() {
                     </button>
                   );
                 })()}
-                <button
-                  onClick={() => setIsThemeSelectorOpen(true)}
-                  className={`hover:scale-102 active:scale-95 transition-all bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1 cursor-pointer ${
-                    isLandscape ? 'px-2.5 py-1' : 'px-3 py-2'
-                  }`}
-                  title="Сравнить дизайны"
-                >
-                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">Дизайн (4)</span>
-                </button>
               </div>
             </div>
 
@@ -2400,6 +2432,17 @@ export default function App() {
                   value={editColor}
                   onChange={(e) => setEditColor(e.target.value)}
                   className="w-full h-10 border border-[#2b394a] bg-[#24303f] rounded-lg cursor-pointer focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-gray-400 font-sans">О себе / Описание</label>
+                <textarea
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value.slice(0, 120))}
+                  placeholder="Расскажите немного о себе..."
+                  rows={2}
+                  className="w-full border border-[#2b394a] bg-[#24303f] text-white px-3 py-2 text-xs rounded-lg focus:outline-none focus:border-sky-500 resize-none font-sans"
                 />
               </div>
             </div>
