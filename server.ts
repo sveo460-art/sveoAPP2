@@ -44,7 +44,7 @@ interface TypingUser {
   recipientId?: string;
 }
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = 3000;
 const MESSAGES_FILE = path.join(process.cwd(), "messages.json");
 const USERS_FILE = path.join(process.cwd(), "users.json");
 
@@ -171,6 +171,14 @@ function broadcastEvent(type: string, data: any) {
 let typingUsers: Record<string, TypingUser> = {};
 
 setInterval(() => {
+  clients.forEach((c) => {
+    try {
+      c.res.write(":\n\n");
+    } catch (e) {}
+  });
+}, 15000);
+
+setInterval(() => {
   const now = Date.now();
   let changed = false;
   Object.keys(typingUsers).forEach((userId) => {
@@ -193,6 +201,7 @@ async function startServer() {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
     const userId = req.query.userId?.toString() || undefined;

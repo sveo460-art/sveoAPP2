@@ -2222,9 +2222,9 @@ export default function App() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
                               <p className="text-xs font-bold truncate text-white">
-                                {u.name} {u.id === currentUser?.id && <span className="text-gray-400 font-normal">(Избранное)</span>}
+                                {u.name} {u.id === currentUser?.id && <span className="text-gray-400 font-normal">(Вы / Избранное)</span>}
                               </p>
-                              {onlineUserIds.includes(u.id) && u.id !== currentUser?.id && (
+                              {onlineUserIds.includes(u.id) && (
                                 <span className="bg-emerald-500/15 text-emerald-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
                                   в сети
                                 </span>
