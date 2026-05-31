@@ -565,6 +565,12 @@ async function startServer() {
       console.error("Save users error", e);
     }
 
+    try {
+      broadcastEvent("users_updated", { type: "user_registered", userId: newUser.id });
+    } catch (e) {
+      console.error("Failed to broadcast users_updated event on registration:", e);
+    }
+
     const { password: _, ...safeUser } = newUser;
     return res.status(201).json(safeUser);
   });
@@ -621,6 +627,12 @@ async function startServer() {
       fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
     } catch (e) {
       console.error("Save users error", e);
+    }
+
+    try {
+      broadcastEvent("users_updated", { type: "entity_created", entityId: newGroup.id });
+    } catch (e) {
+      console.error("Failed to broadcast users_updated event on group creation:", e);
     }
 
     return res.status(201).json(newGroup);

@@ -34,12 +34,30 @@ export default function App() {
   useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [showChatListMobile, setShowChatListMobile] = useState<boolean>(true); // For portrait mobile double viewport
-  const [isNewPmModalOpen, setIsNewPmModalOpen] = useState<boolean>(false);
   const [newPmSearchName, setNewPmSearchName] = useState<string>('');
   const [isCreateEntityOpen, setIsCreateEntityOpen] = useState<'group' | 'channel' | null>(null);
   const [createEntityName, setCreateEntityName] = useState('');
   const [createEntityAvatar, setCreateEntityAvatar] = useState('');
   const [isSearchEntitiesOpen, setIsSearchEntitiesOpen] = useState<boolean>(false);
+  const [joinedEntityIds, setJoinedEntityIds] = useState<string[]>(() => {
+    try {
+      const savedUser = localStorage.getItem('tg_web_chat_user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        const saved = localStorage.getItem(`tg_web_chat_joined_${parsed.id}`);
+        return saved ? JSON.parse(saved) : [];
+      }
+    } catch (e) {
+      console.error("Failed to load joined entities from localStorage", e);
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(`tg_web_chat_joined_${currentUser.id}`, JSON.stringify(joinedEntityIds));
+    }
+  }, [joinedEntityIds, currentUser]);
 
   const [isThemeSelectorOpen, setIsThemeSelectorOpen] = useState<boolean>(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
@@ -136,6 +154,12 @@ export default function App() {
       const targetUser = allUsers.find(u => u.id === msg.recipientId);
       const isGroupOrChannel = targetUser?.type === 'group' || targetUser?.type === 'channel';
 
+      // Skip showing groups/channels that the user has not joined
+      if (isGroupOrChannel) {
+        const isJoined = joinedEntityIds.includes(msg.recipientId) || targetUser?.creatorId === currentUser?.id;
+        if (!isJoined) return;
+      }
+
       let otherId = '';
       let isFromOpponent = false;
 
@@ -162,9 +186,10 @@ export default function App() {
       }
     });
     
-    // Auto-add empty groups and channels to the list so users can always access them
+    // Auto-add only joined groups and channels
     allUsers.forEach(u => {
-      if ((u.type === 'group' || u.type === 'channel') && !participants.has(u.id)) {
+      const isJoined = joinedEntityIds.includes(u.id) || u.creatorId === currentUser?.id;
+      if ((u.type === 'group' || u.type === 'channel') && isJoined && !participants.has(u.id)) {
         participants.set(u.id, { unreadCount: 0 });
       }
     });
@@ -181,7 +206,7 @@ export default function App() {
         unreadCount: data.unreadCount
       };
     });
-  }, [messages, currentUser?.id, allUsers]);
+  }, [messages, currentUser?.id, allUsers, joinedEntityIds]);
 
   const displayedMessages = React.useMemo(() => messages.filter((msg) => {
     if (activeChatId === 'global') {
@@ -324,6 +349,10 @@ export default function App() {
       } catch (err) {
         console.error('Error parsing online_count event:', err);
       }
+    });
+
+    sse.addEventListener('users_updated', () => {
+      loadUsersList();
     });
 
     sse.addEventListener('message', (event) => {
@@ -738,6 +767,12 @@ export default function App() {
   const handleJoinChat = (user: User) => {
     setCurrentUser(user);
     localStorage.setItem('tg_web_chat_user', JSON.stringify(user));
+    try {
+      const saved = localStorage.getItem(`tg_web_chat_joined_${user.id}`);
+      setJoinedEntityIds(saved ? JSON.parse(saved) : []);
+    } catch {
+      setJoinedEntityIds([]);
+    }
   };
 
   const handleLeaveChat = () => {
@@ -748,6 +783,7 @@ export default function App() {
       localStorage.removeItem('tg_web_chat_user');
       setCurrentUser(null);
       setMessages([]);
+      setJoinedEntityIds([]);
     }
   };
 
@@ -1152,6 +1188,7 @@ export default function App() {
       });
       if (res.ok) {
         const newEntity = await res.json();
+        setJoinedEntityIds(prev => prev.includes(newEntity.id) ? prev : [...prev, newEntity.id]);
         setActiveChatId(`private_${newEntity.id}`);
         setIsCreateEntityOpen(null);
         setCreateEntityName('');
@@ -1344,26 +1381,17 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="flex gap-2 w-full">
-                <button
-                  onClick={() => {
-                    setNewPmSearchName('');
-                    setIsNewPmModalOpen(true);
-                  }}
-                  className="flex-1 bg-sky-500 hover:bg-sky-600 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-sky-400/20 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 shrink-0" />
-                  Написать лично
-                </button>
+              <div className="w-full">
                 <button
                   onClick={() => {
                     setNewPmSearchName('');
                     setIsSearchEntitiesOpen(true);
                   }}
-                  className="p-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl flex items-center justify-center transition cursor-pointer"
-                  title="Поиск групп, каналов"
+                  className="w-full bg-white/10 hover:bg-white/15 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-white/5 cursor-pointer"
+                  title="Поиск чатов, каналов и контактов"
                 >
-                  <Search className="w-4 h-4 text-white" />
+                  <Search className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span>Поиск чатов</span>
                 </button>
               </div>
             </div>
@@ -2148,156 +2176,13 @@ export default function App() {
         </div>
       )}
 
-      {isNewPmModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" id="new-pm-backdrop">
-          <div className="w-full max-w-sm bg-[#17212b] rounded-2xl shadow-2xl border border-[#24303f] overflow-hidden text-white" id="target-pm-directory-layout">
-            <div className="p-4 border-b border-[#24303f] flex items-center justify-between bg-[#1f2b38]">
-              <h3 className="text-sm font-bold text-sky-400 flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 shrink-0" />
-                Новая личная переписка
-              </h3>
-              <button 
-                onClick={() => setIsNewPmModalOpen(false)}
-                className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition cursor-pointer"
-              >
-                <X className="w-5 h-5 animate-pulse-short" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <input
-                type="text"
-                placeholder="Поиск собеседника по имени..."
-                value={newPmSearchName}
-                onChange={(e) => setNewPmSearchName(e.target.value)}
-                className="w-full bg-[#24303f] border border-[#2b394a] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-sky-500"
-              />
-
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" id="contacts-scroller-layout">
-                {(() => {
-                  const filtered = allUsers
-                    .filter(u => u.type !== 'group' && u.type !== 'channel')
-                    .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()));
-
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="text-center py-6">
-                        <p className="text-xs text-gray-400 font-medium mb-1">Никого не найдено</p>
-                        <p className="text-[10px] text-gray-500">Попробуйте ввести другое имя для поиска в базе данных</p>
-                      </div>
-                    );
-                  }
-
-                  const me = filtered.find(u => u.id === currentUser?.id);
-                  const others = filtered.filter(u => u.id !== currentUser?.id);
-
-                  return (
-                    <>
-                      {me && (
-                        <button
-                          key={me.id}
-                          onClick={() => {
-                            setActiveChatId(`private_${me.id}`);
-                            setIsNewPmModalOpen(false);
-                            setShowChatListMobile(false);
-                          }}
-                          className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
-                        >
-                          <div 
-                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
-                            style={{ backgroundColor: me.color }}
-                          >
-                            <span className="scale-[0.8]">{me.avatarSymbol}</span>
-                            {onlineUserIds.includes(me.id) && (
-                              <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-[#17212b]" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold truncate text-white">
-                                {me.name}
-                              </p>
-                              <span className="text-gray-400 text-xs font-normal">(Вы / Избранное)</span>
-                            </div>
-                            <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1 mt-0.5">
-                              Сохраненные сообщения
-                            </span>
-                          </div>
-                        </button>
-                      )}
-                      
-                      {others.length === 0 && !me && (
-                        <div className="text-center py-6">
-                          <p className="text-xs text-gray-400 font-medium mb-1">Никого не найдено</p>
-                        </div>
-                      )}
-
-                      {others.length === 0 && !!me && !newPmSearchName && (
-                        <div className="text-center py-5 border-t border-white/5 mt-2">
-                          <p className="text-[11px] text-gray-500 italic pb-1">Нет других участников</p>
-                          <p className="text-[10px] text-gray-500 leading-normal max-w-[200px] mx-auto">
-                            Вы единственный пользователь в базе данных. Вы можете общаться с собой или подождать других собеседников.
-                          </p>
-                        </div>
-                      )}
-
-                      {others.map((u) => (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            setActiveChatId(`private_${u.id}`);
-                            setIsNewPmModalOpen(false);
-                            setShowChatListMobile(false);
-                          }}
-                          className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
-                        >
-                          <div 
-                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
-                            style={{ backgroundColor: u.color }}
-                          >
-                            {u.avatarSymbol}
-                            {onlineUserIds.includes(u.id) && (
-                              <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-[#17212b] animate-pulse" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold truncate text-white">
-                                {u.name}
-                              </p>
-                              {onlineUserIds.includes(u.id) && (
-                                <span className="bg-emerald-500/15 text-emerald-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
-                                  в сети
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-sky-400 font-semibold flex items-center gap-1 mt-0.5">
-                              <span className="w-1 h-1 rounded-full bg-sky-400 animate-ping" />
-                              Перейти в диалог (ЛС)
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-            
-            <div className="p-3 bg-[#121b25] border-t border-[#24303f] text-[10px] text-center text-gray-400 leading-relaxed font-semibold">
-              Зарегистрированные аккаунты появляются здесь в реальном времени!
-            </div>
-          </div>
-        </div>
-      )}
-
       {isSearchEntitiesOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" id="search-entities-backdrop">
           <div className="w-full max-w-sm bg-[#17212b] rounded-2xl shadow-2xl border border-[#24303f] overflow-hidden text-white" id="search-entities-layout">
             <div className="p-4 border-b border-[#24303f] flex items-center justify-between bg-[#1f2b38]">
               <h3 className="text-sm font-bold text-sky-400 flex items-center gap-2">
                 <Search className="w-4 h-4 shrink-0" />
-                Поиск групп и каналов
+                Поиск чатов, каналов и людей
               </h3>
               <button 
                 onClick={() => setIsSearchEntitiesOpen(false)}
@@ -2310,54 +2195,122 @@ export default function App() {
             <div className="p-4 space-y-4">
               <input
                 type="text"
-                placeholder="Поиск по названию..."
+                placeholder="Поиск по названию или имени..."
                 value={newPmSearchName}
                 onChange={(e) => setNewPmSearchName(e.target.value)}
                 className="w-full bg-[#24303f] border border-[#2b394a] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-sky-500"
               />
 
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" id="entities-scroller-layout">
-                {allUsers
-                  .filter(u => u.type === 'group' || u.type === 'channel')
-                  .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
-                  .length === 0 ? (
-                    <div className="text-center py-6">
-                      <p className="text-xs text-gray-400 font-medium mb-1">Ничего не найдено</p>
-                    </div>
-                  ) : (
-                    allUsers
-                      .filter(u => u.type === 'group' || u.type === 'channel')
-                      .filter(u => !newPmSearchName || u.name.toLowerCase().includes(newPmSearchName.toLowerCase()))
-                      .map((u) => (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            setActiveChatId(`private_${u.id}`);
-                            setIsSearchEntitiesOpen(false);
-                            setShowChatListMobile(false);
-                          }}
-                          className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
-                        >
-                          <div 
-                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
-                            style={{ backgroundColor: u.color }}
-                          >
-                            {u.avatarSymbol}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold truncate text-white">{u.name}</p>
-                              <span className="bg-sky-500/15 text-sky-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
-                                {u.type === 'group' ? 'Группа' : 'Канал'}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-sky-400 font-semibold flex items-center gap-1 mt-0.5">
-                              Перейти
-                            </span>
-                          </div>
-                        </button>
-                      ))
-                  )}
+              <div className="space-y-4 max-h-96 overflow-y-auto pr-1" id="entities-scroller-layout">
+                {(() => {
+                  const query = newPmSearchName.toLowerCase();
+                  
+                  const matchedGroups = allUsers
+                    .filter(u => u.type === 'group' || u.type === 'channel')
+                    .filter(u => !query || u.name.toLowerCase().includes(query));
+                    
+                  const matchedUsers = allUsers
+                    .filter(u => u.type !== 'group' && u.type !== 'channel')
+                    .filter(u => !query || u.name.toLowerCase().includes(query));
+
+                  if (matchedGroups.length === 0 && matchedUsers.length === 0) {
+                    return (
+                      <div className="text-center py-8">
+                        <p className="text-xs text-gray-400 font-medium mb-1">Ничего не найдено</p>
+                        <p className="text-[10px] text-gray-500">Попробуйте ввести другое имя для поиска в базе данных</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      {matchedGroups.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block px-2 mb-1">
+                            Группы и каналы ({matchedGroups.length})
+                          </span>
+                          {matchedGroups.map((u) => (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                setJoinedEntityIds(prev => prev.includes(u.id) ? prev : [...prev, u.id]);
+                                setActiveChatId(`private_${u.id}`);
+                                setIsSearchEntitiesOpen(false);
+                                setShowChatListMobile(false);
+                              }}
+                              className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
+                            >
+                              <div 
+                                className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
+                                style={{ backgroundColor: u.color }}
+                              >
+                                {u.avatarSymbol}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-xs font-bold truncate text-white">{u.name}</p>
+                                  <span className="bg-sky-500/15 text-sky-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
+                                    {u.type === 'group' ? 'Группа' : 'Канал'}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+                                  Войти и добавить в список
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {matchedUsers.length > 0 && (
+                        <div className="space-y-1.5 pt-2 border-t border-[#24303f]/50">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block px-2 mb-1">
+                            Люди и контакты ({matchedUsers.length})
+                          </span>
+                          {matchedUsers.map((u) => {
+                            const isMe = u.id === currentUser?.id;
+                            return (
+                              <button
+                                key={u.id}
+                                onClick={() => {
+                                  setActiveChatId(`private_${u.id}`);
+                                  setIsSearchEntitiesOpen(false);
+                                  setShowChatListMobile(false);
+                                }}
+                                className="w-full text-left p-2.5 rounded-xl transition hover:bg-[#24303f] flex items-center gap-3 border border-transparent hover:border-[#2b394a] cursor-pointer"
+                              >
+                                <div 
+                                  className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-inner border border-white/5 relative"
+                                  style={{ backgroundColor: u.color }}
+                                >
+                                  {u.avatarSymbol}
+                                  {onlineUserIds.includes(u.id) && !isMe && (
+                                    <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-[#17212b] animate-pulse" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-xs font-bold truncate text-white">
+                                      {u.name} {isMe && "(Вы)"}
+                                    </p>
+                                    {onlineUserIds.includes(u.id) && !isMe && (
+                                      <span className="bg-emerald-500/15 text-emerald-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full select-none shrink-0 uppercase tracking-widest scale-95 origin-left">
+                                        в сети
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-sky-400 font-semibold flex items-center gap-1 mt-0.5">
+                                    {isMe ? 'Перейти в личный блокнот (Избранное)' : 'Написать личное сообщение'}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
