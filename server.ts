@@ -536,7 +536,7 @@ async function startServer() {
   });
 
   app.post("/api/auth/register", (req, res) => {
-    const { username, password, avatarSymbol, color } = req.body;
+    const { username, password, avatarSymbol, color, bio } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
     }
@@ -556,6 +556,7 @@ async function startServer() {
       password: password,
       color: color || "#2481cc",
       avatarSymbol: avatarSymbol || "🦊",
+      bio: bio || "",
       joinedAt: Date.now(),
       type: "user"
     };

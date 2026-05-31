@@ -25,7 +25,7 @@ export default function App() {
 
   const [activeThemeId, setActiveThemeId] = useState<ThemeId>(() => {
     const saved = localStorage.getItem('tg_web_chat_theme');
-    return (saved as ThemeId) || 'classic';
+    return (saved as ThemeId) || 'midnight';
   });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1509,10 +1509,10 @@ export default function App() {
 
   return (
     <div className={`h-screen w-full flex flex-col overflow-hidden font-sans relative transition-colors duration-350 ${
-      activeThemeId === 'classic' ? 'bg-[#e7ebf0]' :
+      activeThemeId === 'classic' ? 'bg-[#e7ebf0] text-gray-900' :
       activeThemeId === 'graphite' ? 'bg-[#181818] text-gray-100' :
       activeThemeId === 'midnight' ? 'bg-gradient-to-b from-[#0f0c1b] to-[#1a103c] text-violet-100' :
-      'bg-[#f4efe1]'
+      'bg-[#f4efe1] text-stone-900'
     }`} id="app-root-layout">
       {/* Active Call Floating Card UI */}
       {activeCall && (() => {
@@ -2019,7 +2019,9 @@ export default function App() {
                                   <p className="font-semibold text-sky-600 dark:text-sky-400">
                                     {msg.replyTo.userName}
                                   </p>
-                                  <p className="truncate opacity-80 text-[11px]">{msg.replyTo.text}</p>
+                                  <p className={`truncate opacity-80 text-[11px] ${
+                                    activeTheme.isDark ? 'text-gray-300' : 'text-gray-800'
+                                  }`}>{msg.replyTo.text}</p>
                                   </div>
                               )}
 
@@ -2048,7 +2050,9 @@ export default function App() {
                               )}
 
                               {msg.text && !msg.audio && (
-                                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed text-left">
+                                <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed text-left ${
+                                  activeTheme.isDark ? 'text-gray-100' : 'text-gray-900 font-medium'
+                                }`}>
                                   {(() => {
                                     if (!searchQuery.trim()) return msg.text;
                                     const parts = msg.text.split(new RegExp(`(${searchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
@@ -2332,7 +2336,9 @@ export default function App() {
                         value={inputText}
                         onChange={handleInputChange}
                         placeholder="Напишите сообщение..."
-                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all text-gray-800 dark:text-gray-100 ${
+                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all ${
+                          activeTheme.isDark ? 'text-gray-100' : 'text-gray-900 font-medium'
+                        } ${
                           isLandscape ? 'py-1.5 px-3 text-xs' : 'py-2 px-3 sm:py-3 sm:px-4 text-xs'
                         }`}
                       />
