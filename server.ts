@@ -555,7 +555,8 @@ async function startServer() {
       password: password,
       color: color || "#2481cc",
       avatarSymbol: avatarSymbol || "🦊",
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      type: "user"
     };
 
     registeredUsers.push(newUser);
@@ -589,6 +590,12 @@ async function startServer() {
       return res.status(401).json({ error: "Неверный пароль" });
     }
 
+    try {
+      broadcastEvent("users_updated", { type: "user_logged_in", userId: user.id });
+    } catch (e) {
+      console.error("Failed to broadcast users_updated event on login:", e);
+    }
+
     const { password: _, ...safeUser } = user;
     return res.json(safeUser);
   });
@@ -600,7 +607,7 @@ async function startServer() {
       color: u.color,
       avatarSymbol: u.avatarSymbol,
       joinedAt: u.joinedAt,
-      type: u.type,
+      type: u.type || 'user',
       creatorId: u.creatorId
     }));
     return res.json(safeList);

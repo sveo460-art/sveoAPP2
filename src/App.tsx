@@ -1385,6 +1385,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     setNewPmSearchName('');
+                    loadUsersList();
                     setIsSearchEntitiesOpen(true);
                   }}
                   className="w-full bg-white/10 hover:bg-white/15 active:scale-98 text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 border border-white/5 cursor-pointer"
