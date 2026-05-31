@@ -234,7 +234,7 @@ export default function App() {
   };
 
   const loadUsersList = () => {
-    fetch('/api/users')
+    fetch(`/api/users?t=${Date.now()}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         setAllUsers(data);
@@ -253,7 +253,7 @@ export default function App() {
     if (!currentUser) return;
 
     setLoading(true);
-    fetch(`/api/messages?userId=${currentUser.id}`)
+    fetch(`/api/messages?userId=${currentUser.id}&t=${Date.now()}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         setMessages(data);
