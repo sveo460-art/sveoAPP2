@@ -44,7 +44,9 @@ interface TypingUser {
   recipientId?: string;
 }
 
-const PORT = 3000;
+const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
+const PORT = (envPort === 8080 && !isRailway) ? 3000 : envPort; // 8080 is reserved in AI Studio
 const MESSAGES_FILE = path.join(process.cwd(), "messages.json");
 const USERS_FILE = path.join(process.cwd(), "users.json");
 
