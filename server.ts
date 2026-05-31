@@ -44,9 +44,8 @@ interface TypingUser {
   recipientId?: string;
 }
 
-const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
-const PORT = (envPort === 8080 && !isRailway) ? 3000 : envPort; // 8080 is reserved in AI Studio
+const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_NAME || process.env.RAILWAY_STATIC_URL;
+const PORT = isRailway && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const MESSAGES_FILE = path.join(process.cwd(), "messages.json");
 const USERS_FILE = path.join(process.cwd(), "users.json");
 
@@ -55,21 +54,13 @@ try {
   if (fs.existsSync(MESSAGES_FILE)) {
     const data = fs.readFileSync(MESSAGES_FILE, "utf-8");
     messages = JSON.parse(data);
-    messages = messages.filter((m) => m.id !== "seed-1");
-    messages = messages.map((m) => {
-      let updated = { ...m };
-      if (updated.userId === "usr_pavel" || updated.userName === "Pavel Durov") {
-        updated.userId = "usr_admin";
-        updated.userName = "Алексей (Админ)";
-      }
-      if (updated.userName === "Telegram Support Bot" || updated.userName === "Telegram Bot") {
-        updated.userName = "Бот-Помощник";
-      }
-      if (updated.recipientId === "usr_pavel") {
-        updated.recipientId = "usr_admin";
-      }
-      return updated;
-    });
+    messages = messages.filter((m) => 
+      m.id !== "seed-1" && 
+      m.userId !== "usr_admin" && 
+      m.userId !== "usr_ai_bot" && 
+      m.recipientId !== "usr_admin" && 
+      m.recipientId !== "usr_ai_bot"
+    );
     if (messages.length > 300) {
       messages = messages.slice(messages.length - 300);
     }
@@ -93,34 +84,14 @@ try {
   console.error("Failed to load users", e);
 }
 
-const BOT_ADMIN_ID = "usr_admin";
-const BOT_ASSISTANT_ID = "usr_ai_bot";
-
 registeredUsers = registeredUsers.filter(u => 
   u.id !== "usr_pavel" && 
   u.name !== "Pavel Durov" && 
   u.name !== "Telegram Bot" && 
-  u.name !== "Telegram Support Bot"
+  u.name !== "Telegram Support Bot" &&
+  u.id !== "usr_admin" &&
+  u.id !== "usr_ai_bot"
 );
-
-if (!registeredUsers.some(u => u.id === BOT_ADMIN_ID)) {
-  registeredUsers.push({
-    id: BOT_ADMIN_ID,
-    name: "Алексей (Админ)",
-    color: "#2481cc",
-    avatarSymbol: "👑",
-    joinedAt: 1717000000000
-  });
-}
-if (!registeredUsers.some(u => u.id === BOT_ASSISTANT_ID)) {
-  registeredUsers.push({
-    id: BOT_ASSISTANT_ID,
-    name: "Бот-Помощник",
-    color: "#8a2be2",
-    avatarSymbol: "🤖",
-    joinedAt: 1717000000100
-  });
-}
 
 try {
   fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
@@ -137,8 +108,6 @@ function getOnlineUserIds(): string[] {
       ids.add(c.userId);
     }
   });
-  ids.add("usr_admin");
-  ids.add("usr_ai_bot");
   return Array.from(ids);
 }
 
@@ -173,11 +142,19 @@ function broadcastEvent(type: string, data: any) {
 let typingUsers: Record<string, TypingUser> = {};
 
 setInterval(() => {
-  clients.forEach((c) => {
+  let changed = false;
+  clients = clients.filter((c) => {
     try {
       c.res.write(":\n\n");
-    } catch (e) {}
+      return true;
+    } catch (e) {
+      changed = true;
+      return false;
+    }
   });
+  if (changed) {
+    broadcastEvent("online_count", { count: clients.length, onlineUsers: getOnlineUserIds() });
+  }
 }, 15000);
 
 setInterval(() => {
@@ -274,72 +251,6 @@ async function startServer() {
     }
 
     broadcastEvent("message", newMessage);
-
-    if (recipientId === BOT_ADMIN_ID) {
-      setTimeout(() => {
-        const botAnswers = [
-          "Большое спасибо за сообщение! Скоро наш веб-чат станет еще лучше. 😉",
-          "Ваше внимание очень важно для меня. Свобода и конфиденциальность превыше всего!",
-          "Отличная идея для чата! Думаю добавить подобное в следующее обновление клиента. Как вам?",
-          "Дизайн этого приложения просто прекрасен! Какой из четырех вариантов вам понравился больше всего?",
-          "Для сборки мобильной версии мы рекомендуем использовать Capacitor. Инструкция уже готова!"
-        ];
-        const randomAnswer = botAnswers[Math.floor(Math.random() * botAnswers.length)];
-        
-        const botMsg: ServerMessage = {
-          id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
-          userId: BOT_ADMIN_ID,
-          userName: "Алексей (Админ)",
-          userColor: "#2481cc",
-          userAvatar: "👑",
-          text: randomAnswer,
-          timestamp: Date.now(),
-          reactions: {},
-          status: 'sent',
-          recipientId: userId
-        };
-        
-        messages.push(botMsg);
-        try {
-          fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
-        } catch (e) {
-          console.error("Save failed for bot auto-reply", e);
-        }
-        broadcastEvent("message", botMsg);
-      }, 1500);
-    } else if (recipientId === BOT_ASSISTANT_ID) {
-      setTimeout(() => {
-        const botAnswers = [
-          "Привет! Я бот поддержки нашего веб-чата. С удовольствием помогу вам протестировать приватный чат! 🤖",
-          "Аудио сообщения работают просто супер! Попробуйте записать и отправить мне голосовое.",
-          "Все сообщения сохраняются в messages.json на сервере. Ваши переписки защищены!",
-          "Ура, этот супер-чат работает в реальном времени под капотом (Server-Sent Events)!",
-          "Классный веб-чат! Вы можете переписываться со своими друзьями, зашедшими с других вкладок."
-        ];
-        const randomAnswer = botAnswers[Math.floor(Math.random() * botAnswers.length)];
-        
-        const botMsg: ServerMessage = {
-          id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
-          userId: BOT_ASSISTANT_ID,
-          userName: "Бот-Помощник",
-          userColor: "#8a2be2",
-          userAvatar: "🤖",
-          text: randomAnswer,
-          timestamp: Date.now(),
-          reactions: {},
-          status: 'sent',
-          recipientId: userId
-        };
-        
-        messages.push(botMsg);
-        try {
-          fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
-        } catch (e) {
-          console.error("Save failed for assistant auto-reply", e);
-        }
-        broadcastEvent("message", botMsg);
-      }, 1500);
-    }
 
     if (!recipientId && clients.length <= 1) {
       setTimeout(() => {

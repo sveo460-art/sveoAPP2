@@ -30,6 +30,8 @@ export default function App() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeChatId, setActiveChatId] = useState<string>('global'); // 'global' or 'private_userId'
+  const activeChatIdRef = useRef(activeChatId);
+  useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [showChatListMobile, setShowChatListMobile] = useState<boolean>(true); // For portrait mobile double viewport
   const [isNewPmModalOpen, setIsNewPmModalOpen] = useState<boolean>(false);
@@ -335,10 +337,11 @@ export default function App() {
           setTimeout(scrollToBottom, 60);
         }
 
-        const isCurrentGeneral = activeChatId === 'global' && !newMessage.recipientId;
-        const isCurrentPrivate = activeChatId.startsWith('private_') && 
+        const currentChatId = activeChatIdRef.current;
+        const isCurrentGeneral = currentChatId === 'global' && !newMessage.recipientId;
+        const isCurrentPrivate = currentChatId.startsWith('private_') && 
           newMessage.recipientId === currentUser.id && 
-          newMessage.userId === activeChatId.replace('private_', '');
+          newMessage.userId === currentChatId.replace('private_', '');
 
         if (currentUser && newMessage.userId !== currentUser.id && newMessage.status !== 'read' && (isCurrentGeneral || isCurrentPrivate)) {
           fetch('/api/messages/read', {
@@ -679,24 +682,6 @@ export default function App() {
           status: 'ringing',
           role: 'caller'
         });
-
-        const isBot = receiverId === 'usr_admin' || receiverId === 'usr_ai_bot';
-        if (isBot) {
-          setTimeout(() => {
-            fetch(`/api/calls/${call.id}/accept`, { method: 'POST' });
-            
-            setTimeout(() => {
-              if ('speechSynthesis' in window) {
-                const text = receiverId === 'usr_admin' 
-                  ? "Здравствуйте! Я администратор чата. Спасибо, что позвонили. Чем я могу помочь вам настроить?"
-                  : "Привет! Я голосовой помощник на базе искусственного интеллекта. Буду рад поговорить с вами!";
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'ru-RU';
-                window.speechSynthesis.speak(utterance);
-              }
-            }, 1000);
-          }, 3500);
-        }
       } else {
         setActiveCall((prev: any) => prev ? { ...prev, status: 'rejected' } : null);
       }
