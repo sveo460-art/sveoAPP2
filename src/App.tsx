@@ -1462,6 +1462,18 @@ export default function App() {
     }
   };
 
+  const handleLogout = () => {
+    if (sseRef.current) {
+      sseRef.current.close();
+    }
+    localStorage.removeItem('tg_web_chat_user');
+    setCurrentUser(null);
+    setMessages([]);
+    setJoinedEntityIds([]);
+    setIsEditProfileOpen(false);
+    showToast('Вы успешно вышли из профиля');
+  };
+
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createEntityName.trim() || !isCreateEntityOpen) return;
@@ -2454,6 +2466,14 @@ export default function App() {
             </div>
 
             <div className="bg-[#121b25] px-5 py-3 flex justify-end gap-2 border-t border-[#24303f]">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mr-auto px-3.5 py-2 bg-red-500/10 hover:bg-red-600 border border-red-500/25 hover:border-transparent text-red-400 hover:text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Выйти
+              </button>
               <button
                 type="button"
                 onClick={() => setIsEditProfileOpen(false)}
