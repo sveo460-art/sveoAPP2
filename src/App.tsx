@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Message, ThemeId, ChatTheme, TypingState } from './types';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { auth } from './firebase';
-import { signOut } from 'firebase/auth';
 import { ThemeSelector, CHAT_THEMES } from './components/ThemeSelector';
 import { VoiceMessagePlayer } from './components/VoiceMessagePlayer';
 import { CallAudioHelper } from './lib/audio';
@@ -27,7 +25,7 @@ export default function App() {
 
   const [activeThemeId, setActiveThemeId] = useState<ThemeId>(() => {
     const saved = localStorage.getItem('tg_web_chat_theme');
-    return (saved as ThemeId) || 'midnight';
+    return (saved as ThemeId) || 'classic';
   });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1464,23 +1462,6 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    if (sseRef.current) {
-      sseRef.current.close();
-    }
-    try {
-      signOut(auth).catch(console.error);
-    } catch (e) {
-      console.error(e);
-    }
-    localStorage.removeItem('tg_web_chat_user');
-    setCurrentUser(null);
-    setMessages([]);
-    setJoinedEntityIds([]);
-    setIsEditProfileOpen(false);
-    showToast('Вы успешно вышли из профиля');
-  };
-
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createEntityName.trim() || !isCreateEntityOpen) return;
@@ -1528,10 +1509,10 @@ export default function App() {
 
   return (
     <div className={`h-screen w-full flex flex-col overflow-hidden font-sans relative transition-colors duration-350 ${
-      activeThemeId === 'classic' ? 'bg-[#e7ebf0] text-gray-900' :
+      activeThemeId === 'classic' ? 'bg-[#e7ebf0]' :
       activeThemeId === 'graphite' ? 'bg-[#181818] text-gray-100' :
       activeThemeId === 'midnight' ? 'bg-gradient-to-b from-[#0f0c1b] to-[#1a103c] text-violet-100' :
-      'bg-[#f4efe1] text-stone-900'
+      'bg-[#f4efe1]'
     }`} id="app-root-layout">
       {/* Active Call Floating Card UI */}
       {activeCall && (() => {
@@ -2038,9 +2019,7 @@ export default function App() {
                                   <p className="font-semibold text-sky-600 dark:text-sky-400">
                                     {msg.replyTo.userName}
                                   </p>
-                                  <p className={`truncate opacity-80 text-[11px] ${
-                                    activeTheme.isDark ? 'text-gray-300' : 'text-gray-800'
-                                  }`}>{msg.replyTo.text}</p>
+                                  <p className="truncate opacity-80 text-[11px]">{msg.replyTo.text}</p>
                                   </div>
                               )}
 
@@ -2069,9 +2048,7 @@ export default function App() {
                               )}
 
                               {msg.text && !msg.audio && (
-                                <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed text-left ${
-                                  activeTheme.isDark ? 'text-gray-100' : 'text-gray-900 font-medium'
-                                }`}>
+                                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed text-left">
                                   {(() => {
                                     if (!searchQuery.trim()) return msg.text;
                                     const parts = msg.text.split(new RegExp(`(${searchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
@@ -2355,9 +2332,7 @@ export default function App() {
                         value={inputText}
                         onChange={handleInputChange}
                         placeholder="Напишите сообщение..."
-                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all ${
-                          activeTheme.isDark ? 'text-gray-100' : 'text-gray-900 font-medium'
-                        } ${
+                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all text-gray-800 dark:text-gray-100 ${
                           isLandscape ? 'py-1.5 px-3 text-xs' : 'py-2 px-3 sm:py-3 sm:px-4 text-xs'
                         }`}
                       />
@@ -2473,14 +2448,6 @@ export default function App() {
             </div>
 
             <div className="bg-[#121b25] px-5 py-3 flex justify-end gap-2 border-t border-[#24303f]">
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="mr-auto px-3.5 py-2 bg-red-500/10 hover:bg-red-600 border border-red-500/25 hover:border-transparent text-red-400 hover:text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                Выйти
-              </button>
               <button
                 type="button"
                 onClick={() => setIsEditProfileOpen(false)}

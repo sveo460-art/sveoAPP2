@@ -15,7 +15,6 @@ interface ServerUser {
   type?: 'user' | 'group' | 'channel';
   creatorId?: string;
   bio?: string;
-  email?: string;
 }
 
 interface ServerMessage {
@@ -48,9 +47,8 @@ interface TypingUser {
 
 const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_NAME || process.env.RAILWAY_STATIC_URL;
 const PORT = isRailway && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const DATA_DIR = process.env.DATA_DIRECTORY || (fs.existsSync("/data") ? "/data" : process.cwd());
-const MESSAGES_FILE = path.join(DATA_DIR, "messages.json");
-const USERS_FILE = path.join(DATA_DIR, "users.json");
+const MESSAGES_FILE = path.join(process.cwd(), "messages.json");
+const USERS_FILE = path.join(process.cwd(), "users.json");
 
 let messages: ServerMessage[] = [];
 try {
@@ -538,50 +536,28 @@ async function startServer() {
   });
 
   app.post("/api/auth/register", (req, res) => {
-    const { username, password, avatarSymbol, color, bio, id, email } = req.body;
-    if (!username || (!password && !id)) {
-      return res.status(400).json({ error: "Имя пользователя и пароль (или Firebase ID) обязательны" });
+    const { username, password, avatarSymbol, color } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
     }
     const cleanUsername = username.trim();
     if (cleanUsername.length < 2) {
       return res.status(400).json({ error: "Имя пользователя должно содержать минимум 2 символа" });
     }
     const slug = cleanUsername.toLowerCase();
-
-    // Check if user already exists key ID (e.g. Firebase uid)
-    const existingIndex = id ? registeredUsers.findIndex(u => u.id === id) : -1;
-    if (existingIndex > -1) {
-      const user = registeredUsers[existingIndex];
-      user.name = cleanUsername;
-      if (avatarSymbol) user.avatarSymbol = avatarSymbol;
-      if (color) user.color = color;
-      user.bio = bio || "";
-      if (email) user.email = email;
-      try {
-        fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
-        broadcastEvent("users_updated", { type: "user_profile_updated", userId: id });
-      } catch (e) {
-        console.error("Save users update error", e);
-      }
-      const { password: _, ...safeUser } = user;
-      return res.status(200).json(safeUser);
-    }
-
-    const nameExists = registeredUsers.some(u => u.name.trim().toLowerCase() === slug);
-    if (nameExists) {
+    const exists = registeredUsers.some(u => u.name.trim().toLowerCase() === slug);
+    if (exists) {
       return res.status(400).json({ error: "Пользователь с таким именем уже существует" });
     }
 
     const newUser: ServerUser = {
-      id: id || ("usr_" + Date.now().toString() + Math.random().toString(36).substring(2, 5)),
+      id: "usr_" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
       name: cleanUsername,
-      password: password || "",
+      password: password,
       color: color || "#2481cc",
       avatarSymbol: avatarSymbol || "🦊",
-      bio: bio || "",
       joinedAt: Date.now(),
-      type: "user",
-      email: email || undefined
+      type: "user"
     };
 
     registeredUsers.push(newUser);
@@ -599,26 +575,6 @@ async function startServer() {
 
     const { password: _, ...safeUser } = newUser;
     return res.status(201).json(safeUser);
-  });
-
-  app.post("/api/auth/firebase-login", (req, res) => {
-    const { id } = req.body;
-    if (!id) {
-      return res.status(400).json({ error: "Firebase ID обязателен" });
-    }
-    const user = registeredUsers.find(u => u.id === id);
-    if (!user) {
-      return res.status(404).json({ error: "Пользователь еще не зарегистрирован в чате" });
-    }
-
-    try {
-      broadcastEvent("users_updated", { type: "user_logged_in", userId: user.id });
-    } catch (e) {
-      console.error("Failed to broadcast users_updated event on login:", e);
-    }
-
-    const { password: _, ...safeUser } = user;
-    return res.json(safeUser);
   });
 
   app.post("/api/auth/login", (req, res) => {
