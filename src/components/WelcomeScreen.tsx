@@ -39,7 +39,7 @@ interface WelcomeScreenProps {
   onJoin: (user: User) => void;
 }
 
-type AuthMode = 'login' | 'register';
+type AuthMode = 'login' | 'register' | 'verify';
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [activeTab, setActiveTab] = useState<AuthMode>('login');
@@ -52,6 +52,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [bio, setBio] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Email verification states
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifyEmail, setVerifyEmail] = useState('');
+  const [sandboxCode, setSandboxCode] = useState<string | null>(null);
+  const [resendTimer, setResendTimer] = useState(0);
 
   const handleRandomize = () => {
     const adj = RANDOM_ADJECTIVES[Math.floor(Math.random() * RANDOM_ADJECTIVES.length)];
@@ -67,6 +73,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     // Only generate avatar/color once initially
     handleRandomize();
   }, []);
+
+  React.useEffect(() => {
+    if (resendTimer > 0) {
+      const interval = setInterval(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [resendTimer]);
 
   const handleFirebaseToken = async (firebaseUser: any, extraData?: any) => {
     try {
@@ -130,8 +145,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
       const data = await response.json();
 
       if (response.ok) {
-        if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
-        onJoin(data.user || data);
+        if (data.requiresVerification) {
+          setVerifyEmail(data.email || loginEmail);
+          setSandboxCode(data.sandboxCode || null);
+          setActiveTab('verify');
+          setVerificationCode('');
+          setError(null);
+        } else {
+          if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
+          onJoin(data.user || data);
+        }
       } else {
         setError(data.error || 'Ошибка входа');
       }
@@ -172,13 +195,83 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
       const data = await response.json();
 
       if (response.ok) {
-        if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
-        onJoin(data.user || data);
+        if (data.requiresVerification) {
+          setVerifyEmail(data.email || cleanEmail);
+          setSandboxCode(data.sandboxCode || null);
+          setActiveTab('verify');
+          setVerificationCode('');
+          setError(null);
+        } else {
+          if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
+          onJoin(data.user || data);
+        }
       } else {
         setError(data.error || 'Ошибка регистрации');
       }
     } catch (err: any) {
       console.error('Registration failed:', err);
+      setError('Ошибка соединения с сервером');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verificationCode.trim() || !verifyEmail) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await apiFetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: verifyEmail,
+          code: verificationCode.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
+        onJoin(data.user || data);
+      } else {
+        setError(data.error || 'Неверный код подтверждения');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Ошибка соединения с сервером');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendTimer > 0 || !verifyEmail) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await apiFetch('/api/auth/resend-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyEmail }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSandboxCode(data.sandboxCode || null);
+        setResendTimer(60);
+      } else {
+        setError(data.error || 'Не удалось повторно отправить код');
+      }
+    } catch (err: any) {
+      console.error(err);
       setError('Ошибка соединения с сервером');
     } finally {
       setLoading(false);
@@ -208,39 +301,41 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
         </div>
 
         {/* Tab Header */}
-        <div className="flex border-b border-[#2d1860] mb-6 gap-2" id="auth-tabs">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('login');
-              setError(null);
-            }}
-            className={`flex-1 text-center pb-2.5 text-sm font-semibold transition-all border-b-2 flex items-center justify-center gap-1.5 ${
-              activeTab === 'login'
-                ? 'text-purple-400 border-purple-400 font-bold font-sans'
-                : 'text-gray-400 border-transparent hover:text-gray-200 font-sans font-medium'
-            }`}
-          >
-            <LogIn className="w-4 h-4" />
-            Вход в аккаунт
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('register');
-              setError(null);
-            }}
-            className={`flex-1 text-center pb-2.5 text-sm font-semibold transition-all border-b-2 flex items-center justify-center gap-1.5 ${
-              activeTab === 'register'
-                ? 'text-purple-400 border-purple-400 font-bold font-sans'
-                : 'text-gray-400 border-transparent hover:text-gray-200 font-sans font-medium'
-            }`}
-          >
-            <UserPlus className="w-4 h-4" />
-            Регистрация
-          </button>
-        </div>
+        {activeTab !== 'verify' && (
+          <div className="flex border-b border-[#2d1860] mb-6 gap-2" id="auth-tabs">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('login');
+                setError(null);
+              }}
+              className={`flex-1 text-center pb-2.5 text-sm font-semibold transition-all border-b-2 flex items-center justify-center gap-1.5 ${
+                activeTab === 'login'
+                  ? 'text-purple-400 border-purple-400 font-bold font-sans'
+                  : 'text-gray-400 border-transparent hover:text-gray-200 font-sans font-medium'
+              }`}
+            >
+              <LogIn className="w-4 h-4" />
+              Вход в аккаунт
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('register');
+                setError(null);
+              }}
+              className={`flex-1 text-center pb-2.5 text-sm font-semibold transition-all border-b-2 flex items-center justify-center gap-1.5 ${
+                activeTab === 'register'
+                  ? 'text-purple-400 border-purple-400 font-bold font-sans'
+                  : 'text-gray-400 border-transparent hover:text-gray-200 font-sans font-medium'
+              }`}
+            >
+              <UserPlus className="w-4 h-4" />
+              Регистрация
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-950/40 border border-red-900/40 text-red-200 text-xs rounded-xl flex items-center gap-2 animate-fade-in font-sans">
@@ -459,6 +554,96 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
                 </>
               )}
             </button>
+          </form>
+        )}
+
+        {/* 3. VERIFICATION MODE */}
+        {activeTab === 'verify' && (
+          <form onSubmit={handleVerifySubmit} className="space-y-4">
+            <div className="text-center mb-2 animate-fade-in text-wrap break-words overflow-hidden">
+              <div className="inline-flex p-3 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 mb-2">
+                <Mail className="w-6 h-6" />
+              </div>
+              <p className="text-sm text-purple-200 leading-relaxed">
+                Мы отправили письмо с кодом подтверждения на <strong className="text-white font-semibold block mt-0.5 max-w-full truncate">{verifyEmail}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="verify-code" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
+                <Key className="w-3.5 h-3.5 text-purple-400" />
+                6-значный код подтверждения
+              </label>
+              <input
+                type="text"
+                id="verify-code"
+                required
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Например, 123456"
+                className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] text-center tracking-widest text-lg font-bold rounded-xl px-4 py-3 text-white placeholder-purple-300/20 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-mono"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || verificationCode.trim().length !== 6}
+              className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all flex items-center justify-center gap-2 transform active:scale-98 font-sans cursor-pointer mt-4"
+            >
+              {loading ? (
+                <span className="animate-pulse">Проверка...</span>
+              ) : (
+                <>
+                  Подтвердить Email
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+
+            <div className="flex flex-col gap-2 items-center text-xs pt-2">
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={loading || resendTimer > 0}
+                className="text-purple-400 hover:text-purple-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium font-sans"
+              >
+                {resendTimer > 0 ? `Отправить повторно через ${resendTimer}с` : 'Отправить код повторно'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('login');
+                  setError(null);
+                }}
+                className="text-gray-400 hover:text-gray-300 transition-all mt-2"
+              >
+                Вернуться к входу
+              </button>
+            </div>
+
+            {sandboxCode && (
+              <div className="bg-purple-950/45 border border-purple-500/25 px-4 py-3.5 rounded-xl text-xs font-sans text-purple-300 mt-4 shadow-inner">
+                <div className="font-bold flex items-center gap-1.5 mb-1.5 text-purple-200">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  🔧 Тестовый режим в разработке
+                </div>
+                <p className="mb-2 leading-relaxed">Так как SMTP-сервер не настроен для реальной отправки писем, используйте секретный сгенерированный код:</p>
+                <div className="flex items-center justify-between bg-[#190d3d] border border-purple-500/20 px-3 py-1.5 rounded-lg">
+                  <span className="font-mono text-white text-sm font-bold tracking-wider">{sandboxCode}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerificationCode(sandboxCode);
+                      setError(null);
+                    }}
+                    className="text-[10px] text-purple-400 hover:text-purple-300 underline font-semibold transition cursor-pointer"
+                  >
+                    Заполнить код
+                  </button>
+                </div>
+              </div>
+            )}
           </form>
         )}
 

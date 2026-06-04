@@ -12,6 +12,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, deleteDoc, updateDoc } from "firebase/firestore";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import firebaseConfig from "./firebase-applet-config.json";
+import nodemailer from "nodemailer";
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
@@ -38,6 +39,9 @@ interface ServerUser {
   creatorId?: string;
   bio?: string;
   email?: string;
+  emailVerified?: boolean;
+  verificationCode?: string;
+  verificationExpiry?: number;
 }
 
 interface ServerMessage {
@@ -579,6 +583,58 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  async function sendVerificationEmail(toEmail: string, code: string) {
+    const host = process.env.SMTP_HOST || "smtp.gmail.com";
+    const port = parseInt(process.env.SMTP_PORT || "465", 10);
+    const secure = port === 465;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    console.log(`[AUTH] Generating verification code for ${toEmail}: ${code}`);
+
+    if (!user || !pass) {
+      console.log(`[AUTH] SMTP credentials not set. Sandbox mode active. Direct code: ${code}`);
+      return false;
+    }
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: {
+          user,
+          pass,
+        },
+      });
+
+      await transporter.sendMail({
+        from: `"Secret Web Chat" <${user}>`,
+        to: toEmail,
+        subject: "Подтверждение Email - Secret Web Chat",
+        text: `Ваш 6-значный код для верификации email: ${code}\n\nКод действителен в течение 15 минут.`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+            <h2 style="color: #8b5cf6; text-align: center; font-size: 24px; margin-bottom: 20px; font-weight: 700;">Secret Web Chat</h2>
+            <p style="font-size: 16px; line-height: 1.5; color: #334155;">Здравствуйте!</p>
+            <p style="font-size: 16px; line-height: 1.5; color: #334155;">Для завершения вашей регистрации, пожалуйста, введите этот 6-значный код верификации:</p>
+            <div style="background-color: #f5f3ff; border: 1px solid #ddd6fe; padding: 16px; border-radius: 12px; text-align: center; font-size: 32px; font-weight: 800; letter-spacing: 4px; color: #7c3aed; margin: 24px 0;">
+              ${code}
+            </div>
+            <p style="color: #64748b; font-size: 14px; line-height: 1.5;">Этот код действителен в течение 15 минут. Не сообщайте его посторонним лицам.</p>
+            <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">Это автоматическое сообщение, отвечать на него не нужно.</p>
+          </div>
+        `,
+      });
+      console.log(`[AUTH] Verification email successfully sent to ${toEmail}`);
+      return true;
+    } catch (error) {
+      console.error(`[AUTH] Failed to send verification email to ${toEmail}:`, error);
+      return false;
+    }
+  }
+
   app.post("/api/auth/register", async (req, res) => {
     const { username, password, email, avatarSymbol, color, bio } = req.body;
     if (!username || !password || !email) {
@@ -607,6 +663,8 @@ async function startServer() {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
     const newUser: ServerUser = {
       id: "usr_" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
       name: cleanUsername,
@@ -616,27 +674,95 @@ async function startServer() {
       bio: sanitizeHtml(bio || ""),
       joinedAt: Date.now(),
       type: "user",
-      email: email ? sanitizeHtml(email.trim()) : undefined
+      email: cleanEmail,
+      emailVerified: false,
+      verificationCode,
+      verificationExpiry: Date.now() + 15 * 60 * 1000 // 15 mins
     };
 
     registeredUsers.push(newUser);
     saveUserToDb(newUser);
 
-    try {
-      broadcastEvent("users_updated", { type: "user_registered", userId: newUser.id });
-    } catch (e) {
-      console.error("Failed to broadcast users_updated event on registration:", e);
+    await sendVerificationEmail(cleanEmail, verificationCode);
+
+    return res.status(201).json({ 
+      requiresVerification: true, 
+      email: cleanEmail, 
+      sandboxCode: !process.env.SMTP_USER ? verificationCode : undefined 
+    });
+  });
+
+  app.post("/api/auth/verify", async (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ error: "Email и код подтверждения обязательны" });
     }
 
-    const { password: _, ...safeUser } = newUser;
-    const token = jwt.sign({ id: newUser.id, name: newUser.name }, JWT_SECRET, { expiresIn: '7d' });
+    const cleanEmail = email.trim().toLowerCase();
+    const user = registeredUsers.find(u => u.email && u.email.trim().toLowerCase() === cleanEmail);
+    if (!user) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({ error: "Email уже подтвержден" });
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code.trim()) {
+      return res.status(400).json({ error: "Неверный код подтверждения" });
+    }
+
+    if (user.verificationExpiry && user.verificationExpiry < Date.now()) {
+      return res.status(400).json({ error: "Срок действия кода подтверждения истек. Запросите новый код." });
+    }
+
+    user.emailVerified = true;
+    user.verificationCode = undefined;
+    user.verificationExpiry = undefined;
+    saveUserToDb(user);
+
+    try {
+      broadcastEvent("users_updated", { type: "user_registered", userId: user.id });
+    } catch (e) {
+      console.error("Failed to broadcast users_updated event on verification:", e);
+    }
+
+    const { password: _, ...safeUser } = user;
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
     res.cookie('authToken', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    return res.status(201).json({ user: safeUser, token });
+
+    return res.json({ user: safeUser, token });
+  });
+
+  app.post("/api/auth/resend-code", async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Укажите Email" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = registeredUsers.find(u => u.email && u.email.trim().toLowerCase() === cleanEmail);
+    if (!user) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.emailVerified = false;
+    user.verificationCode = verificationCode;
+    user.verificationExpiry = Date.now() + 15 * 60 * 1000;
+    saveUserToDb(user);
+
+    await sendVerificationEmail(cleanEmail, verificationCode);
+
+    return res.json({ 
+      success: true, 
+      sandboxCode: !process.env.SMTP_USER ? verificationCode : undefined 
+    });
   });
 
   app.post("/api/auth/login", async (req, res) => {
@@ -667,6 +793,23 @@ async function startServer() {
       const salt = await bcrypt.genSalt(10);
       user.password = await bcrypt.hash(password, salt);
       saveUserToDb(user);
+    }
+
+    // Check if email verification is incomplete
+    if (user.emailVerified === false) {
+      // Re-generate code to be safe and helpful
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      user.verificationCode = verificationCode;
+      user.verificationExpiry = Date.now() + 15 * 60 * 1000;
+      saveUserToDb(user);
+
+      await sendVerificationEmail(user.email || "", verificationCode);
+
+      return res.status(200).json({ 
+        requiresVerification: true, 
+        email: user.email, 
+        sandboxCode: !process.env.SMTP_USER ? verificationCode : undefined 
+      });
     }
 
     try {
