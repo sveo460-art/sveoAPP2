@@ -1,10 +1,9 @@
 {
-  "projectId": "sveoapp",
-  "appId": "1:164401368720:web:0b6ede6857d12992701215",
-  "apiKey": "AIzaSyC2JUKB7s-rq6KanKegC0i0GnH6FDUDi5M",
-  "authDomain": "sveoapp.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
-  "storageBucket": "sveoapp.firebasestorage.app",
-  "messagingSenderId": "164401368720",
-  "measurementId": "G-S291HEXD5F"
+  "projectId": "isentropic-app-ng02f",
+  "appId": "1:325379956859:web:de7d47477ef233964302de",
+  "apiKey": "AIzaSyBEYEMj6zy5-dq8uwIe708FWH8K3W5Z5QU",
+  "authDomain": "isentropic-app-ng02f.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-13f32fd2-9caf-42a2-a3d6-933f6787a783",
+  "storageBucket": "isentropic-app-ng02f.firebasestorage.app",
+  "messagingSenderId": "325379956859"
 }

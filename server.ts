@@ -956,6 +956,109 @@ async function startServer() {
     return res.status(201).json(newGroup);
   });
 
+  app.get("/api/migrate-status", async (req, res) => {
+    try {
+      const usersCount = registeredUsers.length;
+      const msgsCount = messages.length;
+      res.json({
+        status: "ok",
+        usersCount,
+        msgsCount,
+        firebaseConfigProjectId: firebaseConfig.projectId,
+        firebaseDatabaseId: firebaseConfig.firestoreDatabaseId,
+        authCurrentUser: auth.currentUser ? {
+          uid: auth.currentUser.uid,
+          isAnonymous: auth.currentUser.isAnonymous
+        } : null
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/migrate-run", async (req, res) => {
+    try {
+      const oldConfig = {
+        "projectId": "isentropic-app-ng02f",
+        "appId": "1:325379956859:web:de7d47477ef233964302de",
+        "apiKey": "AIzaSyBEYEMj6zy5-dq8uwIe708FWH8K3W5Z5QU",
+        "authDomain": "isentropic-app-ng02f.firebaseapp.com",
+        "firestoreDatabaseId": "ai-studio-13f32fd2-9caf-42a2-a3d6-933f6787a783",
+        "storageBucket": "isentropic-app-ng02f.firebasestorage.app",
+        "messagingSenderId": "325379956859"
+      };
+
+      // 1. Initialize the source app dynamically to avoid double initializations
+      let sourceApp;
+      const { getApp, getApps, initializeApp: initFbApp } = await import("firebase/app");
+      const activeApps = getApps();
+      const existingSource = activeApps.find(a => a.name === "sourceApp");
+      if (existingSource) {
+        sourceApp = existingSource;
+      } else {
+        sourceApp = initFbApp(oldConfig, "sourceApp");
+      }
+
+      const { getFirestore, collection, getDocs, doc, setDoc } = await import("firebase/firestore");
+      const { getAuth, signInAnonymously: signAnon } = await import("firebase/auth");
+
+      const sourceDb = getFirestore(sourceApp, oldConfig.firestoreDatabaseId);
+      const sourceAuth = getAuth(sourceApp);
+
+      console.log("[MIGRATE] Authenticating with old database...");
+      try {
+        await signAnon(sourceAuth);
+        console.log("[MIGRATE] Auth with old database succeeded!");
+      } catch (authErr: any) {
+        console.warn("[MIGRATE] Auth warning, trying unauthenticated collection read anyway:", authErr.message);
+      }
+
+      // 2. Read users and messages from source
+      console.log("[MIGRATE] Fetching users from old Firestore...");
+      const usersSnapshot = await getDocs(collection(sourceDb, "users"));
+      const fetchedUsers: any[] = [];
+      usersSnapshot.forEach(uDoc => {
+        fetchedUsers.push({ id: uDoc.id, ...uDoc.data() });
+      });
+
+      console.log("[MIGRATE] Fetching messages from old Firestore...");
+      const messagesSnapshot = await getDocs(collection(sourceDb, "messages"));
+      const fetchedMessages: any[] = [];
+      messagesSnapshot.forEach(mDoc => {
+        fetchedMessages.push({ id: mDoc.id, ...mDoc.data() });
+      });
+
+      // 3. Write them into the new (currently active) target db
+      console.log(`[MIGRATE] Writing ${fetchedUsers.length} users...`);
+      for (const u of fetchedUsers) {
+        await setDoc(doc(db, "users", u.id), u);
+      }
+
+      console.log(`[MIGRATE] Writing ${fetchedMessages.length} messages...`);
+      for (const m of fetchedMessages) {
+        await setDoc(doc(db, "messages", m.id), m);
+      }
+
+      console.log("[MIGRATE] Migration finished!");
+
+      res.json({
+        success: true,
+        projectFrom: oldConfig.projectId,
+        projectTo: firebaseConfig.projectId,
+        usersMigrated: fetchedUsers.length,
+        messagesMigrated: fetchedMessages.length
+      });
+
+    } catch (err: any) {
+      console.error("[MIGRATE] Fatal error running migration:", err);
+      res.status(500).json({
+        success: false,
+        error: err.message,
+        code: err.code
+      });
+    }
+  });
+
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", clientsCount: clients.length });
   });
