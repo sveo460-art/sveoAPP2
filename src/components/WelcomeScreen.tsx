@@ -43,7 +43,8 @@ type AuthMode = 'login' | 'register';
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [activeTab, setActiveTab] = useState<AuthMode>('login');
-  const [email, setEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
@@ -121,7 +122,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: email.trim(), // email state holds the input value (either Username or Email)
+          username: loginEmail.trim(), // loginEmail state holds the input value (either Username or Email)
           password: password,
         }),
       });
@@ -145,7 +146,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUsername = username.trim();
-    if (!password || !cleanUsername) {
+    const cleanEmail = registerEmail.trim();
+    if (!password || !cleanUsername || !cleanEmail) {
       setError('Заполните все обязательные поля');
       return;
     }
@@ -159,7 +161,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: cleanUsername,
-          email: email.trim() || undefined,
+          email: cleanEmail,
           password: password,
           avatarSymbol: selectedAvatar,
           color: selectedColor,
@@ -259,8 +261,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
                 type="text"
                 id="email-login"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
                 placeholder="Введите имя пользователя или email..."
                 className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] rounded-xl px-4 py-2.5 text-sm text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-medium font-sans"
               />
@@ -284,7 +286,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
 
             <button
               type="submit"
-              disabled={loading || !email.trim() || !password}
+              disabled={loading || !loginEmail.trim() || !password}
               className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all flex items-center justify-center gap-2 transform active:scale-98 font-sans cursor-pointer mt-4"
             >
               {loading ? (
@@ -358,13 +360,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
             <div className="space-y-1.5">
               <label htmlFor="email-reg" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
                 <AtSign className="w-3.5 h-3.5 text-purple-400" />
-                Email (необязательно)
+                Email
               </label>
               <input
                 type="email"
                 id="email-reg"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                required
+                value={registerEmail}
+                onChange={(e) => setRegisterEmail(e.target.value)}
                 placeholder="email@example.com"
                 className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] rounded-xl px-4 py-2.5 text-sm text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-medium font-sans"
               />

@@ -581,8 +581,8 @@ async function startServer() {
 
   app.post("/api/auth/register", async (req, res) => {
     const { username, password, email, avatarSymbol, color, bio } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
+    if (!username || !password || !email) {
+      return res.status(400).json({ error: "Имя пользователя, пароль и Email обязательны" });
     }
     const cleanUsername = sanitizeHtml(username.trim());
     if (cleanUsername.length < 2) {
@@ -595,12 +595,13 @@ async function startServer() {
       return res.status(400).json({ error: "Пользователь с таким именем уже существует" });
     }
 
-    if (email) {
-      const cleanEmail = email.trim().toLowerCase();
-      const emailExists = registeredUsers.some(u => u.email && u.email.trim().toLowerCase() === cleanEmail);
-      if (emailExists) {
-        return res.status(400).json({ error: "Пользователь с таким Email уже существует" });
-      }
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail.includes("@")) {
+      return res.status(400).json({ error: "Введите корректный адрес Email" });
+    }
+    const emailExists = registeredUsers.some(u => u.email && u.email.trim().toLowerCase() === cleanEmail);
+    if (emailExists) {
+      return res.status(400).json({ error: "Пользователь с таким Email уже существует" });
     }
 
     const salt = await bcrypt.genSalt(10);
