@@ -1472,6 +1472,7 @@ export default function App() {
       sseRef.current.close();
     }
     localStorage.removeItem('tg_web_chat_user');
+    localStorage.removeItem('tg_web_chat_token');
     setCurrentUser(null);
     setMessages([]);
     setJoinedEntityIds([]);

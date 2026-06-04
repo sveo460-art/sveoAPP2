@@ -580,7 +580,7 @@ async function startServer() {
   });
 
   app.post("/api/auth/register", async (req, res) => {
-    const { username, password, avatarSymbol, color, bio } = req.body;
+    const { username, password, email, avatarSymbol, color, bio } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
     }
@@ -595,6 +595,14 @@ async function startServer() {
       return res.status(400).json({ error: "Пользователь с таким именем уже существует" });
     }
 
+    if (email) {
+      const cleanEmail = email.trim().toLowerCase();
+      const emailExists = registeredUsers.some(u => u.email && u.email.trim().toLowerCase() === cleanEmail);
+      if (emailExists) {
+        return res.status(400).json({ error: "Пользователь с таким Email уже существует" });
+      }
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -606,7 +614,8 @@ async function startServer() {
       avatarSymbol: sanitizeHtml(avatarSymbol || "🦊"),
       bio: sanitizeHtml(bio || ""),
       joinedAt: Date.now(),
-      type: "user"
+      type: "user",
+      email: email ? sanitizeHtml(email.trim()) : undefined
     };
 
     registeredUsers.push(newUser);
@@ -635,9 +644,12 @@ async function startServer() {
       return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
     }
     const slug = username.trim().toLowerCase();
-    const user = registeredUsers.find(u => u.name.trim().toLowerCase() === slug);
+    const user = registeredUsers.find(u => 
+      u.name.trim().toLowerCase() === slug || 
+      (u.email && u.email.trim().toLowerCase() === slug)
+    );
     if (!user) {
-      return res.status(401).json({ error: "Пользователь не найден" });
+      return res.status(401).json({ error: "Пользователь не найден. Проверьте имя пользователя или Email" });
     }
     
     // For backwards compatibility with unhashed passwords from before

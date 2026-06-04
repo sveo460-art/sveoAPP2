@@ -117,11 +117,26 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     setLoading(true);
     setError(null);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await handleFirebaseToken(userCredential.user);
+      const response = await apiFetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: email.trim(), // email state holds the input value (either Username or Email)
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
+        onJoin(data.user || data);
+      } else {
+        setError(data.error || 'Ошибка входа');
+      }
     } catch (err: any) {
       console.error(err);
-      setError('Ошибка входа: ' + err.message);
+      setError('Ошибка соединения с сервером');
     } finally {
       setLoading(false);
     }
@@ -130,7 +145,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUsername = username.trim();
-    if (!email || !password || !cleanUsername) {
+    if (!password || !cleanUsername) {
       setError('Заполните все обязательные поля');
       return;
     }
@@ -139,18 +154,30 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     setError(null);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(userCredential.user);
-      await handleFirebaseToken(userCredential.user, {
-        username: cleanUsername,
-        avatarSymbol: selectedAvatar,
-        color: selectedColor,
-        bio: bio.trim()
+      const response = await apiFetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUsername,
+          email: email.trim() || undefined,
+          password: password,
+          avatarSymbol: selectedAvatar,
+          color: selectedColor,
+          bio: bio.trim()
+        }),
       });
-      setError('Аккаунт создан! Пожалуйста, подтвердите ваш Email.');
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
+        onJoin(data.user || data);
+      } else {
+        setError(data.error || 'Ошибка регистрации');
+      }
     } catch (err: any) {
       console.error('Registration failed:', err);
-      setError('Ошибка регистрации: ' + err.message);
+      setError('Ошибка соединения с сервером');
     } finally {
       setLoading(false);
     }
@@ -226,15 +253,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
             <div className="space-y-1.5">
               <label htmlFor="email-login" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
                 <AtSign className="w-3.5 h-3.5 text-purple-400" />
-                Email
+                Имя пользователя или Email
               </label>
               <input
-                type="email"
+                type="text"
                 id="email-login"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Введите ваш email..."
+                placeholder="Введите имя пользователя или email..."
                 className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] rounded-xl px-4 py-2.5 text-sm text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-medium font-sans"
               />
             </div>
@@ -256,8 +283,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
             </div>
 
             <button
-              type="button"
-              onClick={handleEmailLogin}
+              type="submit"
               disabled={loading || !email.trim() || !password}
               className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all flex items-center justify-center gap-2 transform active:scale-98 font-sans cursor-pointer mt-4"
             >
@@ -332,12 +358,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
             <div className="space-y-1.5">
               <label htmlFor="email-reg" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
                 <AtSign className="w-3.5 h-3.5 text-purple-400" />
-                Email
+                Email (необязательно)
               </label>
               <input
                 type="email"
                 id="email-reg"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@example.com"
