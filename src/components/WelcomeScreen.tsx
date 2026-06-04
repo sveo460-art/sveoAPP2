@@ -52,40 +52,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [loading, setLoading] = useState(false);
 
   const handleRandomize = () => {
-    const adj = RANDOM_ADJECTIVES[Math.floor(Math.random() * RANDOM_ADJECTIVES.length)];
-    const nick = RANDOM_NICKNAMES[Math.floor(Math.random() * RANDOM_NICKNAMES.length)];
-    const number = Math.floor(Math.random() * 900) + 100;
-    
-    setUsername(`${adj}_${nick}_${number}`);
     setSelectedAvatar(AVATARS[Math.floor(Math.random() * AVATARS.length)]);
     setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
   };
 
   React.useEffect(() => {
+    // Only generate avatar/color once initially
     handleRandomize();
-    
-    // Check for Email Link Login
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      setLoading(true);
-      let email = window.localStorage.getItem('emailForSignIn');
-      if (!email) {
-        email = window.prompt('Для подтверждения, пожалуйста, введите ваш email:');
-      }
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then(async (result) => {
-            window.localStorage.removeItem('emailForSignIn');
-            await handleFirebaseToken(result.user);
-          })
-          .catch((error) => {
-            console.error(error);
-            setError('Ошибка входа по ссылке: ' + error.message);
-          })
-          .finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    }
   }, []);
 
   const handleFirebaseToken = async (firebaseUser: any) => {
@@ -132,31 +105,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     }
   };
 
-  const handleEmailLinkLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username.includes('@')) {
-      setError('Для входа по ссылке введите корректный Email вместо никнейма');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const actionCodeSettings: ActionCodeSettings = {
-        url: window.location.origin,
-        handleCodeInApp: true,
-      };
-      await sendSignInLinkToEmail(auth, username, actionCodeSettings);
-      window.localStorage.setItem('emailForSignIn', username);
-      setError('Ссылка для входа отправлена на ваш Email! Проверьте почту.');
-    } catch (err: any) {
-      console.error(err);
-      setError('Ошибка при отправке ссылки. Провайдер Email Link включен?');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleEmailLogin = async () => {
+  const handleEmailLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setLoading(true);
     setError(null);
     try {
@@ -190,49 +140,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     }
   };
 
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanUsername = username.trim();
-    if (!cleanUsername) {
-      setError('Пожалуйста, введите имя пользователя');
-      return;
-    }
-    if (!password) {
-      setError('Пожалуйста, введите пароль');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await apiFetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: cleanUsername, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        if (data.token) {
-          localStorage.setItem('tg_web_chat_token', data.token);
-        }
-        onJoin(data.user || data);
-      } else {
-        setError(data.error || 'Неверное имя пользователя или пароль');
-      }
-    } catch (err: any) {
-      console.error('Login request failed:', err);
-      setError('Сбой подключения к серверу. Попробуйте еще раз.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#100926] to-[#05030d] relative overflow-hidden font-sans" id="welcome-screen-bg">
-      {/* Decorative Blur Spheres perfect for Google & Purple Theme */}
+      {/* Decorative Blur Spheres perfect for Purple Theme */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-[110px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#8a2be2]/12 rounded-full blur-[110px] pointer-events-none" />
 
@@ -296,7 +206,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
 
         {/* 1. LOGIN MODE */}
         {activeTab === 'login' && (
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
+          <form onSubmit={handleEmailLogin} className="space-y-4">
             <div className="space-y-1.5">
               <label htmlFor="email-login" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
                 <AtSign className="w-3.5 h-3.5 text-purple-400" />
