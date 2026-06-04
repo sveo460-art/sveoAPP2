@@ -26,6 +26,7 @@ export interface User {
   type?: 'user' | 'group' | 'channel';
   creatorId?: string;
   bio?: string;
+  email?: string;
 }
 
 export interface Message {

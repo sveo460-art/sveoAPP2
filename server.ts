@@ -4,6 +4,26 @@ import cors from "cors";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
+import bcrypt from "bcryptjs";
+import sanitizeHtml from "sanitize-html";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, deleteDoc, updateDoc } from "firebase/firestore";
+import { getAuth, signInAnonymously } from "firebase/auth";
+import firebaseConfig from "./firebase-applet-config.json";
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+const auth = getAuth(firebaseApp);
+
+signInAnonymously(auth).then(cred => {
+  console.log("Server Firebase Auth uid:", cred.user.uid);
+}).catch(e => {
+  console.error("Server Firebase Auth error:", e);
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
 
 interface ServerUser {
   id: string;
@@ -15,6 +35,7 @@ interface ServerUser {
   type?: 'user' | 'group' | 'channel';
   creatorId?: string;
   bio?: string;
+  email?: string;
 }
 
 interface ServerMessage {
@@ -47,42 +68,45 @@ interface TypingUser {
 
 const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_NAME || process.env.RAILWAY_STATIC_URL;
 const PORT = isRailway && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const MESSAGES_FILE = path.join(process.cwd(), "messages.json");
-const USERS_FILE = path.join(process.cwd(), "users.json");
+const DATA_DIR = process.env.DATA_DIRECTORY || (fs.existsSync("/data") ? "/data" : process.cwd());
+const MESSAGES_FILE = path.join(DATA_DIR, "messages.json");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
 
 let messages: ServerMessage[] = [];
-try {
-  if (fs.existsSync(MESSAGES_FILE)) {
-    const data = fs.readFileSync(MESSAGES_FILE, "utf-8");
-    messages = JSON.parse(data);
-    if (messages.length > 300) {
-      messages = messages.slice(messages.length - 300);
-    }
-  } else {
-    messages = [];
-    fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
-  }
-} catch (e) {
-  console.error("Failed to load messages", e);
-}
-
 let registeredUsers: ServerUser[] = [];
-try {
-  if (fs.existsSync(USERS_FILE)) {
-    const data = fs.readFileSync(USERS_FILE, "utf-8");
-    registeredUsers = JSON.parse(data);
-  } else {
-    registeredUsers = [];
-  }
-} catch (e) {
-  console.error("Failed to load users", e);
+
+function saveUserToDb(user: ServerUser) {
+  setDoc(doc(db, "users", user.id), JSON.parse(JSON.stringify(user))).catch(console.error);
 }
 
-try {
-  fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
-} catch (e) {
-  console.error("Failed to save user seeds to disk", e);
+function saveMessageToDb(msg: ServerMessage) {
+  setDoc(doc(db, "messages", msg.id), JSON.parse(JSON.stringify(msg))).catch(console.error);
 }
+
+function deleteMessageFromDb(id: string) {
+  deleteDoc(doc(db, "messages", id)).catch(console.error);
+}
+
+// Fetch initial data and listen for changes
+onSnapshot(collection(db, "users"), (snapshot) => {
+  const users: ServerUser[] = [];
+  snapshot.forEach(doc => {
+    users.push({ id: doc.id, ...doc.data() } as ServerUser);
+  });
+  registeredUsers = users;
+}, (error) => {
+  console.error('Firestore Error sync users: ', error);
+});
+
+onSnapshot(collection(db, "messages"), (snapshot) => {
+  const msgs: ServerMessage[] = [];
+  snapshot.forEach(doc => {
+    msgs.push({ id: doc.id, ...doc.data() } as ServerMessage);
+  });
+  messages = msgs.sort((a, b) => a.timestamp - b.timestamp);
+}, (error) => {
+  console.error('Firestore Error sync messages: ', error);
+});
 
 let clients: { id: string; userId?: string; res: express.Response }[] = [];
 
@@ -159,10 +183,31 @@ setInterval(() => {
 
 async function startServer() {
   const app = express();
-  app.use(cors());
+  app.use(cors({
+    origin: true,
+    credentials: true
+  }));
   app.use(express.json({ limit: "10mb" }));
+  app.use(cookieParser());
 
-  app.get("/api/stream", (req, res) => {
+  // Authentication Middleware
+  const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const token = req.cookies.authToken || req.headers.authorization?.split(' ')[1] || req.query.token;
+    
+    if (!token) {
+      return res.status(401).json({ error: "Необходим токен для доступа" });
+    }
+
+    try {
+      const user = jwt.verify(token as string, JWT_SECRET) as { id: string, name: string };
+      (req as any).user = user;
+      next();
+    } catch (err) {
+      return res.status(403).json({ error: "Недействительный или истекший токен" });
+    }
+  };
+
+  app.get("/api/stream", authenticateToken, (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -185,7 +230,7 @@ async function startServer() {
     });
   });
 
-  app.get("/api/messages", (req, res) => {
+  app.get("/api/messages", authenticateToken, (req, res) => {
     const activeUserId = req.query.userId?.toString();
     if (!activeUserId) {
       return res.json(messages.filter((m) => !m.recipientId));
@@ -199,7 +244,7 @@ async function startServer() {
     res.json(filtered);
   });
 
-  app.post("/api/messages", (req, res) => {
+  app.post("/api/messages", authenticateToken, (req, res) => {
     const { userId, userName, userColor, userAvatar, text, photo, audio, audioDuration, replyTo, recipientId } = req.body;
 
     const hasText = typeof text === "string" && text.trim() !== "";
@@ -213,10 +258,10 @@ async function startServer() {
     const newMessage: ServerMessage = {
       id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
       userId: userId || "guest",
-      userName: userName || "Anonymous Guest",
+      userName: sanitizeHtml(userName || "Anonymous Guest"),
       userColor: userColor || "#2481cc",
       userAvatar: userAvatar || "🐱",
-      text: hasText ? text.slice(0, 5000) : (hasAudio ? "[Голосовое сообщение]" : ""),
+      text: hasText ? sanitizeHtml(text.slice(0, 5000)) : (hasAudio ? "[Голосовое сообщение]" : ""),
       photo: hasPhoto ? photo : undefined,
       audio: hasAudio ? audio : undefined,
       audioDuration: hasAudio ? Number(audioDuration) || 0 : undefined,
@@ -232,11 +277,7 @@ async function startServer() {
       messages = messages.slice(messages.length - 500);
     }
 
-    try {
-      fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
-    } catch (e) {
-      console.error("Save failed", e);
-    }
+    saveMessageToDb(newMessage);
 
     broadcastEvent("message", newMessage);
 
@@ -245,11 +286,7 @@ async function startServer() {
         const msg = messages.find(m => m.id === newMessage.id);
         if (msg && msg.status !== 'read') {
           msg.status = 'read';
-          try {
-            fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
-          } catch (e) {
-            console.error("Save failed for auto-read simulation", e);
-          }
+          saveMessageToDb(msg);
           broadcastEvent("messages_read", { messageIds: [newMessage.id] });
         }
       }, 2000);
@@ -263,7 +300,7 @@ async function startServer() {
     return res.status(201).json(newMessage);
   });
 
-  app.post("/api/messages/read", (req, res) => {
+  app.post("/api/messages/read", authenticateToken, (req, res) => {
     const { messageIds } = req.body;
     if (!messageIds || !Array.isArray(messageIds)) {
       return res.status(400).json({ error: "messageIds array is required" });
@@ -280,7 +317,10 @@ async function startServer() {
 
     if (updated) {
       try {
-        fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
+        messageIds.forEach((id: string) => {
+          const m = messages.find(m => m.id === id);
+          if (m) saveMessageToDb(m);
+        });
       } catch (e) {
         console.error("Save failed for read updates", e);
       }
@@ -290,7 +330,7 @@ async function startServer() {
     return res.json({ success: true });
   });
 
-  app.post("/api/messages/:id/react", (req, res) => {
+  app.post("/api/messages/:id/react", authenticateToken, (req, res) => {
     const { id } = req.params;
     const { userId, emoji } = req.body;
 
@@ -318,7 +358,7 @@ async function startServer() {
     }
 
     try {
-      fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
+      saveMessageToDb(msg);
     } catch (e) {
       console.error("Save failure for reaction", e);
     }
@@ -328,14 +368,14 @@ async function startServer() {
     return res.json({ messageId: id, reactions: msg.reactions });
   });
 
-  app.delete("/api/messages/:id", (req, res) => {
+  app.delete("/api/messages/:id", authenticateToken, (req, res) => {
     const { id } = req.params;
     const initialLen = messages.length;
     messages = messages.filter((m) => m.id !== id);
 
     if (messages.length !== initialLen) {
       try {
-        fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
+        deleteMessageFromDb(id);
       } catch (e) {
         console.error("Save failed for delete", e);
       }
@@ -346,7 +386,7 @@ async function startServer() {
     return res.status(404).json({ error: "Message not found" });
   });
 
-  app.post("/api/messages/:id/pin", (req, res) => {
+  app.post("/api/messages/:id/pin", authenticateToken, (req, res) => {
     const { id } = req.params;
     const msg = messages.find((m) => m.id === id);
     if (!msg) {
@@ -376,7 +416,9 @@ async function startServer() {
     (msg as any).pinned = true;
 
     try {
-      fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
+      messages.forEach(m => {
+        saveMessageToDb(m);
+      });
     } catch (e) {
       console.error("Save failed for pin message", e);
     }
@@ -385,7 +427,7 @@ async function startServer() {
     return res.json({ success: true, messageId: id });
   });
 
-  app.post("/api/messages/:id/unpin", (req, res) => {
+  app.post("/api/messages/:id/unpin", authenticateToken, (req, res) => {
     const { id } = req.params;
     const msg = messages.find((m) => m.id === id);
     if (!msg) {
@@ -395,7 +437,7 @@ async function startServer() {
     (msg as any).pinned = false;
 
     try {
-      fs.promises.writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2)).catch(console.error);
+      saveMessageToDb(msg);
     } catch (e) {
       console.error("Save failed for unpin message", e);
     }
@@ -413,7 +455,7 @@ async function startServer() {
   }
   let activeCalls: ActiveCall[] = [];
 
-  app.post("/api/calls/initiate", (req, res) => {
+  app.post("/api/calls/initiate", authenticateToken, (req, res) => {
     const { callerId, receiverId } = req.body;
     if (!callerId || !receiverId) {
       return res.status(400).json({ error: "Missing callerId or receiverId" });
@@ -448,7 +490,7 @@ async function startServer() {
     return res.json(newCall);
   });
 
-  app.post("/api/calls/:callId/accept", (req, res) => {
+  app.post("/api/calls/:callId/accept", authenticateToken, (req, res) => {
     const { callId } = req.params;
     const call = activeCalls.find(c => c.id === callId);
     if (!call) {
@@ -466,7 +508,7 @@ async function startServer() {
     return res.json(call);
   });
 
-  app.post("/api/calls/:callId/reject", (req, res) => {
+  app.post("/api/calls/:callId/reject", authenticateToken, (req, res) => {
     const { callId } = req.params;
     const callIndex = activeCalls.findIndex(c => c.id === callId);
     if (callIndex === -1) {
@@ -485,7 +527,7 @@ async function startServer() {
     return res.json({ success: true });
   });
 
-  app.post("/api/calls/:callId/hangup", (req, res) => {
+  app.post("/api/calls/:callId/hangup", authenticateToken, (req, res) => {
     const { callId } = req.params;
     const callIndex = activeCalls.findIndex(c => c.id === callId);
     if (callIndex === -1) {
@@ -504,7 +546,7 @@ async function startServer() {
     return res.json({ success: true });
   });
 
-  app.post("/api/calls/signal", (req, res) => {
+  app.post("/api/calls/signal", authenticateToken, (req, res) => {
     const { targetId, senderId, signal } = req.body;
     if (!targetId || !senderId || !signal) {
       return res.status(400).json({ error: "Missing signaling parameters" });
@@ -519,7 +561,7 @@ async function startServer() {
     return res.json({ success: true });
   });
 
-  app.post("/api/typing", (req, res) => {
+  app.post("/api/typing", authenticateToken, (req, res) => {
     const { userId, userName, recipientId } = req.body;
 
     if (userId && userName) {
@@ -535,37 +577,38 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.post("/api/auth/register", (req, res) => {
-    const { username, password, avatarSymbol, color } = req.body;
+  app.post("/api/auth/register", async (req, res) => {
+    const { username, password, avatarSymbol, color, bio } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
     }
-    const cleanUsername = username.trim();
+    const cleanUsername = sanitizeHtml(username.trim());
     if (cleanUsername.length < 2) {
       return res.status(400).json({ error: "Имя пользователя должно содержать минимум 2 символа" });
     }
     const slug = cleanUsername.toLowerCase();
-    const exists = registeredUsers.some(u => u.name.trim().toLowerCase() === slug);
-    if (exists) {
+
+    const nameExists = registeredUsers.some(u => u.name.trim().toLowerCase() === slug);
+    if (nameExists) {
       return res.status(400).json({ error: "Пользователь с таким именем уже существует" });
     }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     const newUser: ServerUser = {
       id: "usr_" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
       name: cleanUsername,
-      password: password,
-      color: color || "#2481cc",
-      avatarSymbol: avatarSymbol || "🦊",
+      password: hashedPassword,
+      color: sanitizeHtml(color || "#2481cc"),
+      avatarSymbol: sanitizeHtml(avatarSymbol || "🦊"),
+      bio: sanitizeHtml(bio || ""),
       joinedAt: Date.now(),
       type: "user"
     };
 
     registeredUsers.push(newUser);
-    try {
-      fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
-    } catch (e) {
-      console.error("Save users error", e);
-    }
+    saveUserToDb(newUser);
 
     try {
       broadcastEvent("users_updated", { type: "user_registered", userId: newUser.id });
@@ -574,10 +617,17 @@ async function startServer() {
     }
 
     const { password: _, ...safeUser } = newUser;
-    return res.status(201).json(safeUser);
+    const token = jwt.sign({ id: newUser.id, name: newUser.name }, JWT_SECRET, { expiresIn: '7d' });
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    return res.status(201).json({ user: safeUser, token });
   });
 
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Имя пользователя и пароль обязательны" });
@@ -587,8 +637,21 @@ async function startServer() {
     if (!user) {
       return res.status(401).json({ error: "Пользователь не найден" });
     }
-    if (user.password !== password) {
+    
+    // For backwards compatibility with unhashed passwords from before
+    const isMatch = user.password && user.password.startsWith('$2a$') 
+      ? await bcrypt.compare(password, user.password)
+      : user.password === password;
+      
+    if (!isMatch) {
       return res.status(401).json({ error: "Неверный пароль" });
+    }
+    
+    // Upgrade password to hashed version if it wasn't hashed
+    if (user.password === password) {
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(password, salt);
+      saveUserToDb(user);
     }
 
     try {
@@ -598,10 +661,17 @@ async function startServer() {
     }
 
     const { password: _, ...safeUser } = user;
-    return res.json(safeUser);
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    return res.json({ user: safeUser, token });
   });
 
-  app.get("/api/users", (req, res) => {
+  app.get("/api/users", authenticateToken, (req, res) => {
     const safeList = registeredUsers.map(u => ({
       id: u.id,
       name: u.name,
@@ -615,22 +685,26 @@ async function startServer() {
     return res.json(safeList);
   });
 
-  app.post("/api/users/update", (req, res) => {
+  app.post("/api/users/update", authenticateToken, (req, res) => {
     const { id, name, avatarSymbol, color, bio } = req.body;
     if (!id || !name) {
       return res.status(400).json({ error: "id and name are required" });
+    }
+    const tokenUser = (req as any).user;
+    if (tokenUser.id !== id) {
+      return res.status(403).json({ error: "Отказано в доступе" });
     }
     const user = registeredUsers.find(u => u.id === id);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    user.name = name.trim();
-    if (avatarSymbol) user.avatarSymbol = avatarSymbol;
-    if (color) user.color = color;
-    user.bio = bio || "";
+    user.name = sanitizeHtml(name.trim());
+    if (avatarSymbol) user.avatarSymbol = sanitizeHtml(avatarSymbol);
+    if (color) user.color = sanitizeHtml(color);
+    user.bio = sanitizeHtml(bio || "");
 
     try {
-      fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
+      saveUserToDb(user);
       broadcastEvent("users_updated", { type: "user_profile_updated", userId: id });
     } catch (e) {
       console.error("Save users update error", e);
@@ -640,7 +714,7 @@ async function startServer() {
     return res.json(safeUser);
   });
 
-  app.post("/api/groups", (req, res) => {
+  app.post("/api/groups", authenticateToken, (req, res) => {
     const { name, avatarSymbol, type, creatorId } = req.body;
     if (!name || !type || !creatorId) {
       return res.status(400).json({ error: "Name, type, and creatorId are required" });
@@ -648,20 +722,16 @@ async function startServer() {
     
     const newGroup: ServerUser = {
       id: type + "_" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
-      name: name.trim(),
+      name: sanitizeHtml(name.trim()),
       color: "#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
-      avatarSymbol: avatarSymbol || (type === "group" ? "👥" : "📢"),
+      avatarSymbol: sanitizeHtml(avatarSymbol || (type === "group" ? "👥" : "📢")),
       joinedAt: Date.now(),
       type: type,
       creatorId: creatorId
     };
 
     registeredUsers.push(newGroup);
-    try {
-      fs.promises.writeFile(USERS_FILE, JSON.stringify(registeredUsers, null, 2)).catch(console.error);
-    } catch (e) {
-      console.error("Save users error", e);
-    }
+    saveUserToDb(newGroup);
 
     try {
       broadcastEvent("users_updated", { type: "entity_created", entityId: newGroup.id });

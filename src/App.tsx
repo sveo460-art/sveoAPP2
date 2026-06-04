@@ -4,6 +4,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { ThemeSelector, CHAT_THEMES } from './components/ThemeSelector';
 import { VoiceMessagePlayer } from './components/VoiceMessagePlayer';
 import { CallAudioHelper } from './lib/audio';
+import { apiFetch } from './lib/api';
 import { 
   Send, Smile, CornerUpLeft, Trash2, Sparkles, CheckCheck, Check,
   ChevronDown, X, Info, Phone, Video, Search, MessageSquare, Edit3, Heart, LogOut,
@@ -13,11 +14,14 @@ import {
 
 const POPULAR_REACTIONS = ['👍', '🔥', '❤️', '😂', '😮', '🎉', '💩'];
 
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>((() => {
     try {
+      const token = localStorage.getItem('tg_web_chat_token');
       const saved = localStorage.getItem('tg_web_chat_user');
-      return saved ? JSON.parse(saved) : null;
+      if (!token || !saved) return null;
+      return JSON.parse(saved);
     } catch {
       return null;
     }
@@ -25,7 +29,7 @@ export default function App() {
 
   const [activeThemeId, setActiveThemeId] = useState<ThemeId>(() => {
     const saved = localStorage.getItem('tg_web_chat_theme');
-    return (saved as ThemeId) || 'classic';
+    return (saved as ThemeId) || 'midnight';
   });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -531,7 +535,7 @@ export default function App() {
   };
 
   const loadUsersList = () => {
-    fetch(`/api/users?t=${Date.now()}`, { cache: 'no-store' })
+    apiFetch(`/api/users?t=${Date.now()}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         setAllUsers(data);
@@ -550,7 +554,7 @@ export default function App() {
     if (!currentUser) return;
 
     setLoading(true);
-    fetch(`/api/messages?userId=${currentUser.id}&t=${Date.now()}`, { cache: 'no-store' })
+    apiFetch(`/api/messages?userId=${currentUser.id}&t=${Date.now()}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         setMessages(data);
@@ -562,7 +566,7 @@ export default function App() {
             .filter((m: any) => m.userId !== currentUser.id && m.status !== 'read')
             .map((m: any) => m.id);
           if (unreadIds.length > 0) {
-            fetch('/api/messages/read', {
+            apiFetch('/api/messages/read', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ messageIds: unreadIds })
@@ -591,7 +595,8 @@ export default function App() {
 
     if (!currentUser) return;
 
-    const sse = new EventSource(`/api/stream?userId=${currentUser.id}`);
+    const token = localStorage.getItem('tg_web_chat_token');
+    const sse = new EventSource(`/api/stream?userId=${currentUser.id}&token=${token || ''}`, { withCredentials: true });
     sseRef.current = sse;
 
     sse.addEventListener('connected', (event: any) => {
@@ -645,7 +650,7 @@ export default function App() {
           newMessage.userId === currentChatId.replace('private_', '');
 
         if (currentUser && newMessage.userId !== currentUser.id && newMessage.status !== 'read' && (isCurrentGeneral || isCurrentPrivate)) {
-          fetch('/api/messages/read', {
+          apiFetch('/api/messages/read', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messageIds: [newMessage.id] })
@@ -933,7 +938,7 @@ export default function App() {
   };
 
   const sendSignalingMessage = (payload: any) => {
-    fetch('/api/calls/signal', {
+    apiFetch('/api/calls/signal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -969,7 +974,7 @@ export default function App() {
     });
 
     try {
-      const res = await fetch('/api/calls/initiate', {
+      const res = await apiFetch('/api/calls/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callerId: currentUser.id, receiverId })
@@ -996,7 +1001,7 @@ export default function App() {
     if (!activeCall) return;
     callAudioHelperRef.current?.playBeep();
     try {
-      await fetch(`/api/calls/${activeCall.id}/accept`, { method: 'POST' });
+      await apiFetch(`/api/calls/${activeCall.id}/accept`, { method: 'POST' });
     } catch(e) {
       console.error("Accept call error:", e);
     }
@@ -1006,7 +1011,7 @@ export default function App() {
     if (!activeCall) return;
     callAudioHelperRef.current?.playBeep();
     try {
-      await fetch(`/api/calls/${activeCall.id}/reject`, { method: 'POST' });
+      await apiFetch(`/api/calls/${activeCall.id}/reject`, { method: 'POST' });
     } catch(e) {
       console.error("Reject call error:", e);
     }
@@ -1016,7 +1021,7 @@ export default function App() {
     if (!activeCall) return;
     callAudioHelperRef.current?.playBeep();
     try {
-      await fetch(`/api/calls/${activeCall.id}/hangup`, { method: 'POST' });
+      await apiFetch(`/api/calls/${activeCall.id}/hangup`, { method: 'POST' });
     } catch(e) {
       console.error("Hangup call error:", e);
     }
@@ -1073,7 +1078,7 @@ export default function App() {
     if (!currentUser) return;
 
     if (!typingTimerRef.current) {
-      fetch('/api/typing', {
+      apiFetch('/api/typing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1159,7 +1164,7 @@ export default function App() {
     setReplyTarget(null);
 
     try {
-      const res = await fetch('/api/messages', {
+      const res = await apiFetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -1288,7 +1293,7 @@ export default function App() {
     setReplyTarget(null);
 
     try {
-      const res = await fetch('/api/messages', {
+      const res = await apiFetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -1335,7 +1340,7 @@ export default function App() {
     );
 
     try {
-      await fetch(`/api/messages/${messageId}/react`, {
+      await apiFetch(`/api/messages/${messageId}/react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id, emoji }),
@@ -1355,7 +1360,7 @@ export default function App() {
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
 
     try {
-      await fetch(`/api/messages/${messageId}`, {
+      await apiFetch(`/api/messages/${messageId}`, {
         method: 'DELETE',
       });
     } catch (err) {
@@ -1366,7 +1371,7 @@ export default function App() {
   const handlePinMessage = async (messageId: string) => {
     if (!currentUser) return;
     try {
-      await fetch(`/api/messages/${messageId}/pin`, {
+      await apiFetch(`/api/messages/${messageId}/pin`, {
         method: 'POST'
       });
     } catch (err) {
@@ -1377,7 +1382,7 @@ export default function App() {
   const handleUnpinMessage = async (messageId: string) => {
     if (!currentUser) return;
     try {
-      await fetch(`/api/messages/${messageId}/unpin`, {
+      await apiFetch(`/api/messages/${messageId}/unpin`, {
         method: 'POST'
       });
     } catch (err) {
@@ -1397,7 +1402,7 @@ export default function App() {
     }
 
     try {
-      await fetch('/api/messages', {
+      await apiFetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1445,7 +1450,7 @@ export default function App() {
     setIsEditProfileOpen(false);
 
     try {
-      await fetch('/api/users/update', {
+      await apiFetch('/api/users/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1462,12 +1467,24 @@ export default function App() {
     }
   };
 
+  const handleLogout = () => {
+    if (sseRef.current) {
+      sseRef.current.close();
+    }
+    localStorage.removeItem('tg_web_chat_user');
+    setCurrentUser(null);
+    setMessages([]);
+    setJoinedEntityIds([]);
+    setIsEditProfileOpen(false);
+    showToast('Вы успешно вышли из профиля');
+  };
+
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createEntityName.trim() || !isCreateEntityOpen) return;
 
     try {
-      const res = await fetch('/api/groups', {
+      const res = await apiFetch('/api/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1509,10 +1526,10 @@ export default function App() {
 
   return (
     <div className={`h-screen w-full flex flex-col overflow-hidden font-sans relative transition-colors duration-350 ${
-      activeThemeId === 'classic' ? 'bg-[#e7ebf0]' :
+      activeThemeId === 'classic' ? 'bg-[#e7ebf0] text-gray-900' :
       activeThemeId === 'graphite' ? 'bg-[#181818] text-gray-100' :
       activeThemeId === 'midnight' ? 'bg-gradient-to-b from-[#0f0c1b] to-[#1a103c] text-violet-100' :
-      'bg-[#f4efe1]'
+      'bg-[#f4efe1] text-stone-900'
     }`} id="app-root-layout">
       {/* Active Call Floating Card UI */}
       {activeCall && (() => {
@@ -2019,7 +2036,9 @@ export default function App() {
                                   <p className="font-semibold text-sky-600 dark:text-sky-400">
                                     {msg.replyTo.userName}
                                   </p>
-                                  <p className="truncate opacity-80 text-[11px]">{msg.replyTo.text}</p>
+                                  <p className={`truncate opacity-80 text-[11px] ${
+                                    activeTheme.isDark ? 'text-gray-300' : 'text-gray-800'
+                                  }`}>{msg.replyTo.text}</p>
                                   </div>
                               )}
 
@@ -2048,7 +2067,9 @@ export default function App() {
                               )}
 
                               {msg.text && !msg.audio && (
-                                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed text-left">
+                                <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed text-left ${
+                                  activeTheme.isDark ? 'text-gray-100' : 'text-gray-900 font-medium'
+                                }`}>
                                   {(() => {
                                     if (!searchQuery.trim()) return msg.text;
                                     const parts = msg.text.split(new RegExp(`(${searchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
@@ -2332,7 +2353,9 @@ export default function App() {
                         value={inputText}
                         onChange={handleInputChange}
                         placeholder="Напишите сообщение..."
-                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all text-gray-800 dark:text-gray-100 ${
+                        className={`flex-1 min-w-0 ${activeTheme.inputBg} border rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all ${
+                          activeTheme.isDark ? 'text-gray-100' : 'text-gray-900 font-medium'
+                        } ${
                           isLandscape ? 'py-1.5 px-3 text-xs' : 'py-2 px-3 sm:py-3 sm:px-4 text-xs'
                         }`}
                       />
@@ -2448,6 +2471,14 @@ export default function App() {
             </div>
 
             <div className="bg-[#121b25] px-5 py-3 flex justify-end gap-2 border-t border-[#24303f]">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mr-auto px-3.5 py-2 bg-red-500/10 hover:bg-red-600 border border-red-500/25 hover:border-transparent text-red-400 hover:text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Выйти
+              </button>
               <button
                 type="button"
                 onClick={() => setIsEditProfileOpen(false)}

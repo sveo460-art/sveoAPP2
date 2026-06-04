@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the chat application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "avatarSymbol": { "type": "string" },
+        "joinedAt": { "type": "number" },
+        "type": { "type": "string", "enum": ["user", "group", "channel"] },
+        "creatorId": { "type": "string" },
+        "bio": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["name", "color", "avatarSymbol", "joinedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userColor": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "text": { "type": "string" },
+        "photo": { "type": "string" },
+        "audio": { "type": "string" },
+        "audioDuration": { "type": "number" },
+        "timestamp": { "type": "number" },
+        "replyTo": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "userName": { "type": "string" },
+            "text": { "type": "string" }
+          }
+        },
+        "reactions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "status": { "type": "string", "enum": ["sent", "read"] },
+        "recipientId": { "type": "string" },
+        "pinned": { "type": "boolean" }
+      },
+      "required": ["userId", "userName", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores all messages."
+    }
+  }
+}
