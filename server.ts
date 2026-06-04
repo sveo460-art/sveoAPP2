@@ -583,7 +583,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  async function sendVerificationEmail(toEmail: string, code: string) {
+  async function sendVerificationEmail(toEmail: string, code: string): Promise<{ success: boolean; error?: string }> {
     const host = process.env.SMTP_HOST || "smtp.gmail.com";
     const port = parseInt(process.env.SMTP_PORT || "465", 10);
     const secure = port === 465;
@@ -594,7 +594,7 @@ async function startServer() {
 
     if (!user || !pass) {
       console.log(`[AUTH] SMTP credentials not set. Sandbox mode active. Direct code: ${code}`);
-      return false;
+      return { success: false, error: "SMTP credentials not configured" };
     }
 
     try {
@@ -628,12 +628,29 @@ async function startServer() {
         `,
       });
       console.log(`[AUTH] Verification email successfully sent to ${toEmail}`);
-      return true;
-    } catch (error) {
+      return { success: true };
+    } catch (error: any) {
       console.error(`[AUTH] Failed to send verification email to ${toEmail}:`, error);
-      return false;
+      return { success: false, error: error?.message || String(error) };
     }
   }
+
+  app.get("/api/auth/smtp-status", (req, res) => {
+    const host = process.env.SMTP_HOST || "smtp.gmail.com";
+    const port = process.env.SMTP_PORT || "465";
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    res.json({
+      host,
+      port,
+      hasUser: !!(user && user.trim() !== ""),
+      hasPass: !!(pass && pass.trim() !== ""),
+      userLength: user ? user.length : 0,
+      passLength: pass ? pass.length : 0,
+      userValue: user ? `${user.substring(0, 3)}...${user.substring(Math.max(0, user.length - 3))}` : null
+    });
+  });
 
   app.post("/api/auth/register", async (req, res) => {
     const { username, password, email, avatarSymbol, color, bio } = req.body;
@@ -683,12 +700,13 @@ async function startServer() {
     registeredUsers.push(newUser);
     saveUserToDb(newUser);
 
-    await sendVerificationEmail(cleanEmail, verificationCode);
+    const emailRes = await sendVerificationEmail(cleanEmail, verificationCode);
 
     return res.status(201).json({ 
       requiresVerification: true, 
       email: cleanEmail, 
-      sandboxCode: !process.env.SMTP_USER ? verificationCode : undefined 
+      sandboxCode: (!process.env.SMTP_USER || !emailRes.success) ? verificationCode : undefined,
+      smtpError: emailRes.success ? undefined : emailRes.error
     });
   });
 
@@ -757,11 +775,12 @@ async function startServer() {
     user.verificationExpiry = Date.now() + 15 * 60 * 1000;
     saveUserToDb(user);
 
-    await sendVerificationEmail(cleanEmail, verificationCode);
+    const emailRes = await sendVerificationEmail(cleanEmail, verificationCode);
 
     return res.json({ 
       success: true, 
-      sandboxCode: !process.env.SMTP_USER ? verificationCode : undefined 
+      sandboxCode: (!process.env.SMTP_USER || !emailRes.success) ? verificationCode : undefined,
+      smtpError: emailRes.success ? undefined : emailRes.error
     });
   });
 
@@ -803,12 +822,13 @@ async function startServer() {
       user.verificationExpiry = Date.now() + 15 * 60 * 1000;
       saveUserToDb(user);
 
-      await sendVerificationEmail(user.email || "", verificationCode);
+      const emailRes = await sendVerificationEmail(user.email || "", verificationCode);
 
       return res.status(200).json({ 
         requiresVerification: true, 
         email: user.email, 
-        sandboxCode: !process.env.SMTP_USER ? verificationCode : undefined 
+        sandboxCode: (!process.env.SMTP_USER || !emailRes.success) ? verificationCode : undefined,
+        smtpError: emailRes.success ? undefined : emailRes.error
       });
     }
 

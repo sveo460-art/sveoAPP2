@@ -150,7 +150,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
           setSandboxCode(data.sandboxCode || null);
           setActiveTab('verify');
           setVerificationCode('');
-          setError(null);
+          if (data.smtpError) {
+            setError(`SMTP-сообщение не доставлено: ${data.smtpError}. Пожалуйста, воспользуйтесь кодом ниже в режиме тестирования.`);
+          } else {
+            setError(null);
+          }
         } else {
           if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
           onJoin(data.user || data);
@@ -200,7 +204,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
           setSandboxCode(data.sandboxCode || null);
           setActiveTab('verify');
           setVerificationCode('');
-          setError(null);
+          if (data.smtpError) {
+            setError(`SMTP-сообщение не доставлено: ${data.smtpError}. Пожалуйста, воспользуйтесь кодом ниже в режиме тестирования.`);
+          } else {
+            setError(null);
+          }
         } else {
           if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
           onJoin(data.user || data);
@@ -267,6 +275,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
       if (response.ok) {
         setSandboxCode(data.sandboxCode || null);
         setResendTimer(60);
+        if (data.smtpError) {
+          setError(`Повторное письмо не отправлено: ${data.smtpError}. Попробуйте восстановить из тестового блока.`);
+        } else {
+          setError(null);
+        }
       } else {
         setError(data.error || 'Не удалось повторно отправить код');
       }
