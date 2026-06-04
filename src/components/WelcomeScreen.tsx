@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { apiFetch } from '../lib/api';
+import { auth } from '../lib/firebase';
+import { GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { 
   Sparkles, MessageSquare, ArrowRight, RefreshCw, Key, 
-  User as UserIcon, LogIn, UserPlus, AlignLeft 
+  User as UserIcon, LogIn, UserPlus, AlignLeft, Chrome, Mail, AtSign
 } from 'lucide-react';
 
 const AVATARS = [
@@ -41,7 +43,7 @@ type AuthMode = 'login' | 'register';
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [activeTab, setActiveTab] = useState<AuthMode>('login');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
@@ -61,53 +63,128 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
 
   React.useEffect(() => {
     handleRandomize();
+    
+    // Check for Email Link Login
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      setLoading(true);
+      let email = window.localStorage.getItem('emailForSignIn');
+      if (!email) {
+        email = window.prompt('Для подтверждения, пожалуйста, введите ваш email:');
+      }
+      if (email) {
+        signInWithEmailLink(auth, email, window.location.href)
+          .then(async (result) => {
+            window.localStorage.removeItem('emailForSignIn');
+            await handleFirebaseToken(result.user);
+          })
+          .catch((error) => {
+            console.error(error);
+            setError('Ошибка входа по ссылке: ' + error.message);
+          })
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    }
   }, []);
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanUsername = username.trim();
-    if (!cleanUsername) {
-      setError('Пожалуйста, введите имя пользователя');
-      return;
-    }
-    if (cleanUsername.length < 2) {
-      setError('Имя пользователя должно содержать не менее 2 символов');
-      return;
-    }
-    if (!password) {
-      setError('Пожалуйста, введите пароль');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
+  const handleFirebaseToken = async (firebaseUser: any) => {
     try {
-      const response = await apiFetch('/api/auth/register', {
+      const response = await apiFetch('/api/auth/firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: cleanUsername,
-          password,
-          avatarSymbol: selectedAvatar,
-          color: selectedColor,
-          bio: bio.trim()
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        if (data.token) {
-          localStorage.setItem('tg_web_chat_token', data.token);
-        }
+        if (data.token) localStorage.setItem('tg_web_chat_token', data.token);
         onJoin(data.user || data);
       } else {
-        setError(data.error || 'Произошла ошибка при регистрации');
+        setError(data.error || 'Ошибка входа через Firebase');
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error(err);
+      setError('Ошибка соединения с сервером');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      await handleFirebaseToken(result.user);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setError('Не удалось войти через Google: Убедитесь, что провайдер включен в Firebase.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailLinkLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.includes('@')) {
+      setError('Для входа по ссылке введите корректный Email вместо никнейма');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const actionCodeSettings: ActionCodeSettings = {
+        url: window.location.origin,
+        handleCodeInApp: true,
+      };
+      await sendSignInLinkToEmail(auth, username, actionCodeSettings);
+      window.localStorage.setItem('emailForSignIn', username);
+      setError('Ссылка для входа отправлена на ваш Email! Проверьте почту.');
+    } catch (err: any) {
+      console.error(err);
+      setError('Ошибка при отправке ссылки. Провайдер Email Link включен?');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await handleFirebaseToken(userCredential.user);
+    } catch (err: any) {
+      console.error(err);
+      setError('Ошибка входа: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(userCredential.user);
+      await handleFirebaseToken(userCredential.user);
+      setError('Аккаунт создан! Пожалуйста, подтвердите ваш Email.');
+    } catch (err: any) {
       console.error('Registration failed:', err);
-      setError('Сбой подключения к серверу. Попробуйте еще раз.');
+      setError('Ошибка регистрации: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -221,18 +298,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
         {activeTab === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label htmlFor="username-login" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
-                <UserIcon className="w-3.5 h-3.5 text-purple-400" />
-                Имя пользователя (Никнейм)
+              <label htmlFor="email-login" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
+                <AtSign className="w-3.5 h-3.5 text-purple-400" />
+                Email
               </label>
               <input
-                type="text"
-                id="username-login"
+                type="email"
+                id="email-login"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Введите никнейм..."
-                maxLength={32}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Введите ваш email..."
                 className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] rounded-xl px-4 py-2.5 text-sm text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-medium font-sans"
               />
             </div>
@@ -254,19 +330,37 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
             </div>
 
             <button
-              type="submit"
-              disabled={loading || !username.trim() || !password}
+              type="button"
+              onClick={handleEmailLogin}
+              disabled={loading || !email.trim() || !password}
               className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all flex items-center justify-center gap-2 transform active:scale-98 font-sans cursor-pointer mt-4"
             >
               {loading ? (
                 <span className="animate-pulse">Обработка...</span>
               ) : (
                 <>
-                  Войти в чат
+                  Войти по паролю
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
+            <div className="flex items-center gap-2 my-4">
+              <div className="h-px bg-[#2b1860] flex-1"></div>
+              <span className="text-xs text-purple-300">или</span>
+              <div className="h-px bg-[#2b1860] flex-1"></div>
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                className="w-full bg-white hover:bg-gray-100 text-[#140c31] font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 transform active:scale-98 font-sans cursor-pointer"
+              >
+                <Chrome className="w-4 h-4 text-orange-500" />
+                Войти через Google
+              </button>
+            </div>
           </form>
         )}
 
@@ -293,27 +387,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
             </div>
 
             <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-xs font-semibold text-purple-300">
-                <label htmlFor="username-reg" className="flex items-center gap-1 font-sans">
-                  <UserIcon className="w-3.5 h-3.5 text-purple-400" />
-                  Имя пользователя / Никнейм
-                </label>
-                <button 
-                  type="button"
-                  onClick={handleRandomize} 
-                  className="text-purple-300 hover:text-white flex items-center gap-1 font-normal text-[11px] font-sans cursor-pointer"
-                >
-                  <RefreshCw className="w-2.5 h-2.5" /> Случайное имя
-                </button>
-              </div>
+              <label htmlFor="email-reg" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
+                <AtSign className="w-3.5 h-3.5 text-purple-400" />
+                Email
+              </label>
               <input
-                type="text"
-                id="username-reg"
+                type="email"
+                id="email-reg"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Например, Super_Coder_7"
-                maxLength={32}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
                 className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] rounded-xl px-4 py-2.5 text-sm text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-medium font-sans"
               />
             </div>

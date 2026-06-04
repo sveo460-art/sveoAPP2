@@ -671,6 +671,41 @@ async function startServer() {
     return res.json({ user: safeUser, token });
   });
 
+  app.post("/api/auth/firebase", async (req, res) => {
+    const { uid, email, displayName, photoURL } = req.body;
+    if (!uid) {
+      return res.status(400).json({ error: "UID обязателен" });
+    }
+    
+    let user = registeredUsers.find(u => u.id === uid || u.email === email);
+    
+    if (!user) {
+      // Create new user for this Firebase account
+      user = {
+        id: uid,
+        name: sanitizeHtml(displayName || email?.split('@')[0] || `User_${uid.substring(0, 5)}`),
+        color: "#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
+        avatarSymbol: "🔥",
+        joinedAt: Date.now(),
+        type: "user",
+        email: email
+      };
+      registeredUsers.push(user);
+      saveUserToDb(user);
+    }
+
+    try {
+      broadcastEvent("users_updated", { type: "user_logged_in", userId: user.id });
+    } catch (e) {
+      console.error("Failed to broadcast event on firebase login:", e);
+    }
+
+    const { password: _, ...safeUser } = user;
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
+    
+    return res.json({ user: safeUser, token });
+  });
+
   app.get("/api/users", authenticateToken, (req, res) => {
     const safeList = registeredUsers.map(u => ({
       id: u.id,
