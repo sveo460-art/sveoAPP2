@@ -14,7 +14,9 @@ import { getAuth, signInAnonymously } from "firebase/auth";
 import firebaseConfig from "./firebase-applet-config.json";
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
+  ? getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId)
+  : getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
 
 signInAnonymously(auth).then(cred => {
@@ -672,7 +674,7 @@ async function startServer() {
   });
 
   app.post("/api/auth/firebase", async (req, res) => {
-    const { uid, email, displayName, photoURL } = req.body;
+    const { uid, email, displayName, photoURL, username, color, avatarSymbol, bio } = req.body;
     if (!uid) {
       return res.status(400).json({ error: "UID обязателен" });
     }
@@ -683,9 +685,10 @@ async function startServer() {
       // Create new user for this Firebase account
       user = {
         id: uid,
-        name: sanitizeHtml(displayName || email?.split('@')[0] || `User_${uid.substring(0, 5)}`),
-        color: "#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
-        avatarSymbol: "🔥",
+        name: sanitizeHtml(username || displayName || email?.split('@')[0] || `User_${uid.substring(0, 5)}`),
+        color: color ? sanitizeHtml(color) : ("#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')),
+        avatarSymbol: avatarSymbol ? sanitizeHtml(avatarSymbol) : "🔥",
+        bio: bio ? sanitizeHtml(bio).slice(0, 120) : undefined,
         joinedAt: Date.now(),
         type: "user",
         email: email

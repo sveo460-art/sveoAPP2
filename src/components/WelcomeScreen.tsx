@@ -44,6 +44,7 @@ type AuthMode = 'login' | 'register';
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [activeTab, setActiveTab] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
@@ -52,6 +53,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
   const [loading, setLoading] = useState(false);
 
   const handleRandomize = () => {
+    const adj = RANDOM_ADJECTIVES[Math.floor(Math.random() * RANDOM_ADJECTIVES.length)];
+    const nick = RANDOM_NICKNAMES[Math.floor(Math.random() * RANDOM_NICKNAMES.length)];
+    const number = Math.floor(Math.random() * 900) + 100;
+    
+    setUsername(`${adj}_${nick}_${number}`);
     setSelectedAvatar(AVATARS[Math.floor(Math.random() * AVATARS.length)]);
     setSelectedColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
   };
@@ -61,7 +67,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     handleRandomize();
   }, []);
 
-  const handleFirebaseToken = async (firebaseUser: any) => {
+  const handleFirebaseToken = async (firebaseUser: any, extraData?: any) => {
     try {
       const response = await apiFetch('/api/auth/firebase', {
         method: 'POST',
@@ -70,7 +76,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL
+          photoURL: firebaseUser.photoURL,
+          ...extraData
         }),
       });
 
@@ -98,7 +105,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     } catch (err: any) {
       console.error(err);
       if (err.code !== 'auth/popup-closed-by-user') {
-        setError('Не удалось войти через Google: Убедитесь, что провайдер включен в Firebase.');
+        setError(`Не удалось войти через Google: ${err.message || err} (код: ${err.code || 'unknown'}). Пожалуйста, проверьте, включен ли Google в Firebase Console.`);
       }
     } finally {
       setLoading(false);
@@ -122,7 +129,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    const cleanUsername = username.trim();
+    if (!email || !password || !cleanUsername) {
+      setError('Заполните все обязательные поля');
+      return;
+    }
     
     setLoading(true);
     setError(null);
@@ -130,7 +141,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(userCredential.user);
-      await handleFirebaseToken(userCredential.user);
+      await handleFirebaseToken(userCredential.user, {
+        username: cleanUsername,
+        avatarSymbol: selectedAvatar,
+        color: selectedColor,
+        bio: bio.trim()
+      });
       setError('Аккаунт создан! Пожалуйста, подтвердите ваш Email.');
     } catch (err: any) {
       console.error('Registration failed:', err);
@@ -294,6 +310,23 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onJoin }) => {
                 </button>
               </div>
               <span className="text-[10px] text-purple-300/80 mt-2 font-sans">Ваш аватар</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="username-reg" className="flex items-center gap-1 text-xs font-semibold text-purple-300 font-sans">
+                <UserIcon className="w-3.5 h-3.5 text-purple-400" />
+                Имя пользователя (Никнейм)
+              </label>
+              <input
+                type="text"
+                id="username-reg"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Например, Super_Coder_7"
+                maxLength={32}
+                className="w-full bg-[#1b0e45]/80 border border-[#3e1d82] rounded-xl px-4 py-2.5 text-sm text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 transition-all font-medium font-sans"
+              />
             </div>
 
             <div className="space-y-1.5">
